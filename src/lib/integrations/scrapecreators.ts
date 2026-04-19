@@ -59,6 +59,10 @@ export async function scrapeAccountProfile(
 
   const data = await response.json();
 
+  if (data.account_deactivated || data.message === "Account doesn't exist") {
+    throw new Error(`Account not found or deactivated: ${username}`);
+  }
+
   if (isTikTok) {
     const user = data.userInfo?.user ?? data.user ?? data;
     const stats = data.userInfo?.stats ?? data.stats ?? data;
