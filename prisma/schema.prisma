@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Project {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?  @db.Text
+  appStoreUrl     String?
+  playStoreUrl    String?
+  websiteUrl      String?
+  productDoc      String?  @db.Text
+  targetPlatforms String[]
+  targetRegions   String[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  accounts   Account[]
+  hooks      Hook[]
+  scripts    Script[]
+  creators   Creator[]
+  trends     Trend[]
+  hypotheses Hypothesis[]
+  knowledge  KnowledgeArticle[]
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  platform          String
+  username          String
+  url               String
+  displayName       String?
+  bio               String?  @db.Text
+  followersCount    Int?
+  followingCount    Int?
+  videosCount       Int?
+  avgViews          Int?
+  avgEngagementRate Float?
+  category          String   @default("competitor")
+  tags              String[]
+  notes             String?  @db.Text
+  lastScrapedAt     DateTime?
+  scrapeStatus      String   @default("idle")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  videos   Video[]
+  creators Creator[]
+
+  @@unique([projectId, platform, username])
+}
+
+model Video {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  platform        String
+  videoId         String
+  url             String
+  type            String   @default("video")
+  thumbnailUrl    String?
+  description     String?  @db.Text
+  durationSeconds Int?
+  viewsCount      Int?
+  likesCount      Int?
+  commentsCount   Int?
+  sharesCount     Int?
+  savesCount      Int?
+  engagementRate  Float?
+  postedAt        DateTime?
+  hashtags        String[]
+  musicName       String?
+  isAnalyzed      Boolean  @default(false)
+  analysis        Json?
+  hookText        String?  @db.Text
+  hookVisual      String?  @db.Text
+  fullScript      String?  @db.Text
+  tags            String[]
+  notes           String?  @db.Text
+  isBookmarked    Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  hooks   Hook[]
+  scripts Script[]
+
+  @@unique([platform, videoId])
+}
+
+model Hook {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  videoId           String?
+  video             Video?   @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  text              String   @db.Text
+  visualDescription String?  @db.Text
+  hookType          String?
+  language          String   @default("en")
+  sourceViews       Int?
+  sourceEr          Float?
+  adaptedText       String?  @db.Text
+  tags              String[]
+  rating            Int?
+  notes             String?  @db.Text
+  isUsed            Boolean  @default(false)
+  createdAt         DateTime @default(now())
+}
+
+model Script {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  videoId         String?
+  video           Video?   @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  title           String
+  hook            String?  @db.Text
+  body            String?  @db.Text
+  cta             String?  @db.Text
+  fullText        String?  @db.Text
+  format          String?
+  durationSeconds Int?
+  language        String   @default("en")
+  sourceViews     Int?
+  adaptedVersion  String?  @db.Text
+  tags            String[]
+  rating          Int?
+  notes           String?  @db.Text
+  isUsed          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+}
+
+model Creator {
+  id                 String   @id @default(cuid())
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  prototypeAccountId String?
+  prototypeAccount   Account? @relation(fields: [prototypeAccountId], references: [id], onDelete: SetNull)
+  name               String
+  summary            String?  @db.Text
+  appearance         String?  @db.Text
+  voiceAndSpeech     String?  @db.Text
+  personality        String?  @db.Text
+  background         String?  @db.Text
+  visualStyle        String?  @db.Text
+  imageGenPrompt     String?  @db.Text
+  referenceImages    String[]
+  generatedImages    String[]
+  topHooks           Json?
+  topScripts         Json?
+  status             String   @default("draft")
+  notes              String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Trend {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?  @db.Text
+  source          String?
+  type            String
+  platform        String?
+  exampleUrls     String[]
+  relevance       String   @default("warm")
+  applicability   Int?
+  adaptationNotes String?  @db.Text
+  tags            String[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Hypothesis {
+  id             String    @id @default(cuid())
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?   @db.Text
+  format         String?
+  hookId         String?
+  scriptId       String?
+  creatorId      String?
+  status         String    @default("idea")
+  priority       String    @default("medium")
+  expectedResult String?   @db.Text
+  actualResult   String?   @db.Text
+  publicationUrl String?
+  publishedAt    DateTime?
+  metrics        Json?
+  learnings      String?   @db.Text
+  tags           String[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model KnowledgeArticle {
+  id        String   @id @default(cuid())
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  content   String   @db.Text
+  category  String
+  source    String?
+  tags      String[]
+  isPinned  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
