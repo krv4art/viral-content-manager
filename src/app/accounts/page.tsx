@@ -315,15 +315,11 @@ export default function AccountsPage() {
                           <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      <Link href={`/accounts/${account.id}`}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                        >
+                      <a href={account.url} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Button>
-                      </Link>
+                      </a>
                     </div>
                   </TableCell>
                 </TableRow>

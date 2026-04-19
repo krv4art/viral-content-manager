@@ -10,6 +10,7 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { getVideos, createVideo, toggleBookmark, triggerBatchAnalyze } from "@/actions/videos";
 import { getAccounts } from "@/actions/accounts";
@@ -334,7 +335,7 @@ export default function VideosPage() {
                   Дата
                   <SortButton field="postedAt" />
                 </TableHead>
-                <TableHead className="w-[60px]" />
+                <TableHead className="w-[80px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -379,18 +380,25 @@ export default function VideosPage() {
                     {formatDate(video.postedAt)}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => handleToggleBookmark(video.id)}
-                    >
-                      {video.isBookmarked ? (
-                        <BookmarkCheck className="h-4 w-4 text-primary" />
-                      ) : (
-                        <Bookmark className="h-4 w-4" />
-                      )}
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleToggleBookmark(video.id)}
+                      >
+                        {video.isBookmarked ? (
+                          <BookmarkCheck className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Bookmark className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <a href={video.url} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      </a>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
