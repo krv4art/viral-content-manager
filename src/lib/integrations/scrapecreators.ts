@@ -2,7 +2,7 @@ const BASE_URL = "https://api.scrapecreators.com";
 
 function getHeaders(): HeadersInit {
   return {
-    Authorization: `Bearer ${process.env.SCRAPECREATORS_API_KEY}`,
+    "x-api-key": process.env.SCRAPECREATORS_API_KEY ?? "",
     "Content-Type": "application/json",
   };
 }
@@ -38,13 +38,11 @@ export async function scrapeAccountProfile(
   platform: string,
   username: string
 ): Promise<ScrapeProfileResult> {
-  const endpoint =
-    platform.toLowerCase() === "tiktok"
-      ? "/api/v1/tiktok/account"
-      : "/api/v1/instagram/account";
+  const isTikTok = platform.toLowerCase() === "tiktok";
+  const endpoint = isTikTok ? "/v1/tiktok/profile" : "/v1/instagram/profile";
 
   const url = new URL(endpoint, BASE_URL);
-  url.searchParams.set("username", username);
+  url.searchParams.set("handle", username.replace(/^@/, ""));
 
   const response = await fetch(url.toString(), {
     method: "GET",
@@ -52,22 +50,39 @@ export async function scrapeAccountProfile(
   });
 
   if (!response.ok) {
+    const body = await response.text().catch(() => "");
     throw new Error(
-      `ScrapeCreators profile request failed: ${response.status} ${response.statusText}`
+      `ScrapeCreators profile request failed: ${response.status} ${response.statusText} — ${body}`
     );
   }
 
   const data = await response.json();
 
-  return {
-    displayName: data.displayName ?? data.nickname ?? null,
-    bio: data.bio ?? data.biography ?? null,
-    followersCount: data.followersCount ?? data.followerCount ?? null,
-    followingCount: data.followingCount ?? null,
-    videosCount: data.videosCount ?? data.videoCount ?? null,
-    avatarUrl: data.avatarUrl ?? data.profilePicUrl ?? null,
-    ...data,
-  };
+  if (isTikTok) {
+    const user = data.userInfo?.user ?? data.user ?? data;
+    const stats = data.userInfo?.stats ?? data.stats ?? data;
+    return {
+      displayName: user.nickname ?? user.uniqueId ?? null,
+      bio: user.signature ?? null,
+      followersCount: stats.followerCount ?? null,
+      followingCount: stats.followingCount ?? stats.friendCount ?? null,
+      videosCount: stats.videoCount ?? null,
+      avatarUrl: user.avatarLarger ?? user.avatarMedium ?? null,
+      ...data,
+    };
+  } else {
+    // Instagram: profile endpoint returns user object directly or wrapped
+    const user = data.graphql?.user ?? data.user ?? data;
+    return {
+      displayName: user.full_name ?? user.username ?? null,
+      bio: user.biography ?? null,
+      followersCount: user.edge_followed_by?.count ?? user.follower_count ?? null,
+      followingCount: user.edge_follow?.count ?? user.following_count ?? null,
+      videosCount: user.edge_owner_to_timeline_media?.count ?? null,
+      avatarUrl: user.profile_pic_url_hd ?? user.profile_pic_url ?? null,
+      ...data,
+    };
+  }
 }
 
 export async function scrapeAccountVideos(
@@ -75,16 +90,21 @@ export async function scrapeAccountVideos(
   username: string,
   limit?: number
 ): Promise<ScrapeVideoResult[]> {
-  const endpoint =
-    platform.toLowerCase() === "tiktok"
-      ? "/api/v1/tiktok/videos"
-      : "/api/v1/instagram/videos";
+  const isTikTok = platform.toLowerCase() === "tiktok";
 
-  const url = new URL(endpoint, BASE_URL);
-  url.searchParams.set("username", username);
-  if (limit) {
-    url.searchParams.set("limit", String(limit));
+  if (isTikTok) {
+    return scrapeTikTokVideos(username, limit);
+  } else {
+    return scrapeInstagramReels(username, limit);
   }
+}
+
+async function scrapeTikTokVideos(
+  username: string,
+  limit?: number
+): Promise<ScrapeVideoResult[]> {
+  const url = new URL("/v2/tiktok/profile-videos", BASE_URL);
+  url.searchParams.set("handle", username.replace(/^@/, ""));
 
   const response = await fetch(url.toString(), {
     method: "GET",
@@ -92,43 +112,95 @@ export async function scrapeAccountVideos(
   });
 
   if (!response.ok) {
+    const body = await response.text().catch(() => "");
     throw new Error(
-      `ScrapeCreators videos request failed: ${response.status} ${response.statusText}`
+      `ScrapeCreators TikTok videos request failed: ${response.status} ${response.statusText} — ${body}`
     );
   }
 
   const data = await response.json();
+  const rawVideos: Record<string, unknown>[] = data.videos ?? data.itemList ?? data ?? [];
+  const sliced = limit ? rawVideos.slice(0, limit) : rawVideos;
 
-  const videos: ScrapeVideoResult[] = (data.videos ?? data ?? []).map(
-    (v: Record<string, unknown>) => ({
+  return sliced.map((v) => {
+    const stats = (v.stats ?? v) as Record<string, unknown>;
+    const music = v.music as Record<string, unknown> | undefined;
+    const videoMeta = v.video as Record<string, unknown> | undefined;
+    const challenges = (v.challenges ?? v.hashtags ?? []) as Array<Record<string, unknown>>;
+
+    return {
       videoId: String(v.id ?? v.videoId ?? ""),
-      url: String(v.url ?? v.webVideoUrl ?? ""),
-      description: (v.description ?? v.caption ?? v.text ?? null) as
-        | string
-        | null,
-      thumbnailUrl: (v.thumbnailUrl ?? v.coverUrl ?? v.imageUrl ?? null) as
-        | string
-        | null,
-      durationSeconds: (v.durationSeconds ?? v.duration ?? null) as
-        | number
-        | null,
-      viewsCount: (v.viewsCount ?? v.playCount ?? v.viewCount ?? null) as
-        | number
-        | null,
-      likesCount: (v.likesCount ?? v.diggCount ?? null) as number | null,
-      commentsCount: (v.commentsCount ?? v.commentCount ?? null) as
-        | number
-        | null,
-      sharesCount: (v.sharesCount ?? v.shareCount ?? null) as number | null,
-      savesCount: (v.savesCount ?? v.collectCount ?? null) as number | null,
-      postedAt: (v.postedAt ?? v.createTime ?? v.createdAt ?? null) as
-        | string
-        | null,
-      hashtags: (v.hashtags ?? v.challenges ?? []) as string[],
-      musicName: (v.musicName ?? (v.music as Record<string, unknown> | undefined)?.name ?? null) as string | null,
-      ...v,
-    })
-  );
+      url: String(videoMeta?.playAddr ?? v.url ?? v.webVideoUrl ?? ""),
+      description: (v.desc ?? v.description ?? v.caption ?? null) as string | null,
+      thumbnailUrl: (videoMeta?.originCover ?? videoMeta?.cover ?? v.thumbnailUrl ?? null) as string | null,
+      durationSeconds: ((videoMeta?.duration ?? v.durationSeconds ?? v.duration ?? null) as number | null),
+      viewsCount: (stats.playCount ?? stats.viewCount ?? null) as number | null,
+      likesCount: (stats.diggCount ?? stats.likeCount ?? null) as number | null,
+      commentsCount: (stats.commentCount ?? null) as number | null,
+      sharesCount: (stats.shareCount ?? null) as number | null,
+      savesCount: (stats.collectCount ?? stats.saveCount ?? null) as number | null,
+      postedAt: v.createTime
+        ? new Date(Number(v.createTime) * 1000).toISOString()
+        : (v.postedAt as string | null) ?? null,
+      hashtags: challenges
+        .map((c) => String(c.title ?? c.name ?? c))
+        .filter(Boolean),
+      musicName: (music?.title ?? music?.name ?? v.musicName ?? null) as string | null,
+    };
+  });
+}
 
-  return videos;
+async function scrapeInstagramReels(
+  username: string,
+  limit?: number
+): Promise<ScrapeVideoResult[]> {
+  const url = new URL("/v1/instagram/user/reels", BASE_URL);
+  url.searchParams.set("handle", username.replace(/^@/, ""));
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: getHeaders(),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `ScrapeCreators Instagram reels request failed: ${response.status} ${response.statusText} — ${body}`
+    );
+  }
+
+  const data = await response.json();
+  const rawItems: Record<string, unknown>[] =
+    data.items ?? data.reels_media?.[0]?.items ?? data ?? [];
+  const sliced = limit ? rawItems.slice(0, limit) : rawItems;
+
+  return sliced.map((v) => {
+    const caption = (v.caption as Record<string, unknown> | null);
+    const imageVersions = v.image_versions2 as Record<string, unknown> | undefined;
+    const candidates = (imageVersions?.candidates as Array<Record<string, unknown>> | undefined) ?? [];
+
+    return {
+      videoId: String(v.pk ?? v.id ?? ""),
+      url: String(v.video_url ?? v.url ?? ""),
+      description: (caption?.text ?? null) as string | null,
+      thumbnailUrl: (candidates[0]?.url ?? v.thumbnail_url ?? null) as string | null,
+      durationSeconds: (v.video_duration ?? v.duration ?? null) as number | null,
+      viewsCount: (v.play_count ?? v.view_count ?? null) as number | null,
+      likesCount: (v.like_count ?? null) as number | null,
+      commentsCount: (v.comment_count ?? null) as number | null,
+      sharesCount: (v.share_count ?? null) as number | null,
+      savesCount: (v.save_count ?? null) as number | null,
+      postedAt: v.taken_at
+        ? new Date(Number(v.taken_at) * 1000).toISOString()
+        : (v.postedAt as string | null) ?? null,
+      hashtags: [],
+      musicName: (
+        (v.clips_metadata as Record<string, unknown> | undefined)?.music_info
+          ? String(((v.clips_metadata as Record<string, unknown>).music_info as Record<string, unknown>)?.music_asset_info
+              ? (((v.clips_metadata as Record<string, unknown>).music_info as Record<string, unknown>).music_asset_info as Record<string, unknown>)?.display_artist ?? ""
+              : "")
+          : null
+      ) as string | null,
+    };
+  });
 }
