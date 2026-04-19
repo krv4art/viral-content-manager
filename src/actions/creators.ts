@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { inngest } from "@/lib/inngest/client";
 import { revalidatePath } from "next/cache";
 
 export async function getCreators(
@@ -145,4 +146,28 @@ export async function deleteCreator(id: string) {
   } catch (error) {
     return { error: "Failed to delete creator" };
   }
+}
+
+export async function triggerCreateCreatorFromPrototype(
+  projectId: string,
+  accountId: string,
+  creatorName: string
+) {
+  try {
+    const creator = await prisma.creator.create({
+      data: { projectId, prototypeAccountId: accountId, name: creatorName, status: "draft" },
+    });
+    await inngest.send({
+      name: "create-creator-doc",
+      data: { creatorId: creator.id, accountId },
+    });
+    revalidatePath(`/projects/${projectId}/creators`);
+    return { success: true, data: creator };
+  } catch (error) {
+    return { error: "Failed to create creator from prototype" };
+  }
+}
+
+export async function checkRunwareKey() {
+  return { available: !!process.env.RUNWARE_API_KEY };
 }

@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Plus, UserPlus } from "lucide-react";
-import { getCreators, createCreator } from "@/actions/creators";
+import { getCreators, createCreator, triggerCreateCreatorFromPrototype } from "@/actions/creators";
+import { getAccounts } from "@/actions/accounts";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,12 @@ export default function CreatorsPage() {
   const [formName, setFormName] = useState("");
   const [formSummary, setFormSummary] = useState("");
 
+  const [protoDialogOpen, setProtoDialogOpen] = useState(false);
+  const [protoAccountId, setProtoAccountId] = useState("");
+  const [protoCreatorName, setProtoCreatorName] = useState("");
+  const [protoSaving, setProtoSaving] = useState(false);
+  const [protoAccounts, setProtoAccounts] = useState<Array<{ id: string; username: string; platform: string }>>([]);
+
   const fetchCreators = useCallback(async () => {
     if (!projectId) {
       setLoading(false);
@@ -76,6 +83,41 @@ export default function CreatorsPage() {
   useEffect(() => {
     fetchCreators();
   }, [fetchCreators]);
+
+  useEffect(() => {
+    if (protoDialogOpen && projectId) {
+      getAccounts(projectId).then((res) => {
+        if (res.success && res.data) {
+          setProtoAccounts(
+            (res.data as unknown as Array<Record<string, unknown>>).map((a) => ({
+              id: a.id as string,
+              username: a.username as string,
+              platform: a.platform as string,
+            }))
+          );
+        }
+      });
+    }
+  }, [protoDialogOpen, projectId]);
+
+  const handleCreateFromPrototype = async () => {
+    if (!projectId || !protoAccountId || !protoCreatorName.trim()) {
+      toast.error("Заполните все поля");
+      return;
+    }
+    setProtoSaving(true);
+    const res = await triggerCreateCreatorFromPrototype(projectId, protoAccountId, protoCreatorName);
+    if (res.success) {
+      toast.success("Документ создаётся, займёт 1–2 мин");
+      setProtoDialogOpen(false);
+      setProtoAccountId("");
+      setProtoCreatorName("");
+      fetchCreators();
+    } else {
+      toast.error("Ошибка при создании криейтора");
+    }
+    setProtoSaving(false);
+  };
 
   const handleCreate = async () => {
     if (!projectId || !formName.trim()) {
@@ -113,12 +155,10 @@ export default function CreatorsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Криейторы</h1>
         <div className="flex gap-2">
-          <Link href="/accounts">
-            <Button variant="outline">
-              <UserPlus className="mr-2 h-4 w-4" />
-              Создать из прототипа
-            </Button>
-          </Link>
+          <Button variant="outline" onClick={() => setProtoDialogOpen(true)}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            Создать из прототипа
+          </Button>
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Новый криейтор
@@ -235,6 +275,48 @@ export default function CreatorsPage() {
             </Button>
             <Button onClick={handleCreate} disabled={saving}>
               {saving ? "Создание..." : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={protoDialogOpen} onOpenChange={setProtoDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Создать из прототипа</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Аккаунт-прототип</Label>
+              <Select value={protoAccountId} onValueChange={setProtoAccountId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите аккаунт" />
+                </SelectTrigger>
+                <SelectContent>
+                  {protoAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      @{a.username} ({a.platform})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="proto-name">Имя криейтора</Label>
+              <Input
+                id="proto-name"
+                value={protoCreatorName}
+                onChange={(e) => setProtoCreatorName(e.target.value)}
+                placeholder="Имя нового криейтора"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProtoDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleCreateFromPrototype} disabled={protoSaving}>
+              {protoSaving ? "Создание..." : "Создать"}
             </Button>
           </DialogFooter>
         </DialogContent>

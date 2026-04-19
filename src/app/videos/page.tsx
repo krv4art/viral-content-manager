@@ -7,8 +7,9 @@ import {
   Bookmark,
   BookmarkCheck,
   ArrowUpDown,
+  Sparkles,
 } from "lucide-react";
-import { getVideos, createVideo, toggleBookmark } from "@/actions/videos";
+import { getVideos, createVideo, toggleBookmark, triggerBatchAnalyze } from "@/actions/videos";
 import { getAccounts } from "@/actions/accounts";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatNumber, formatPercent, formatDate } from "@/lib/utils/formatters";
@@ -83,6 +84,11 @@ export default function VideosPage() {
   const [formUrl, setFormUrl] = useState("");
   const [formAccountId, setFormAccountId] = useState("");
   const [formType, setFormType] = useState("video");
+
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+  const [batchAccountId, setBatchAccountId] = useState("");
+  const [batchLimit, setBatchLimit] = useState(10);
+  const [batchSaving, setBatchSaving] = useState(false);
 
   const fetchVideos = useCallback(async () => {
     if (!projectId) {
@@ -178,6 +184,22 @@ export default function VideosPage() {
     setSaving(false);
   };
 
+  const handleBatchAnalyze = async () => {
+    if (!batchAccountId) {
+      toast.error("Выберите аккаунт");
+      return;
+    }
+    setBatchSaving(true);
+    const res = await triggerBatchAnalyze(batchAccountId, batchLimit);
+    if (res.success) {
+      toast.success(`Анализ топ-${batchLimit} видео запущен`);
+      setBatchDialogOpen(false);
+    } else {
+      toast.error("Ошибка при запуске анализа");
+    }
+    setBatchSaving(false);
+  };
+
   const handleToggleBookmark = async (videoId: string) => {
     const res = await toggleBookmark(videoId);
     if (res.success) {
@@ -188,6 +210,8 @@ export default function VideosPage() {
             : v
         )
       );
+    } else {
+      toast.error("Не удалось изменить избранное");
     }
   };
 
@@ -214,10 +238,16 @@ export default function VideosPage() {
     <div className="flex-1 space-y-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Видео</h1>
-        <Button onClick={() => setDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Добавить видео
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setBatchDialogOpen(true)}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            Анализировать топ-10
+          </Button>
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Добавить видео
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -404,6 +434,50 @@ export default function VideosPage() {
             </Button>
             <Button onClick={handleCreate} disabled={saving}>
               {saving ? "Добавление..." : "Добавить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Анализировать топ-N видео</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Аккаунт</Label>
+              <Select value={batchAccountId} onValueChange={setBatchAccountId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите аккаунт" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      @{a.username} ({a.platform})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="batch-limit">Количество видео (1–50)</Label>
+              <Input
+                id="batch-limit"
+                type="number"
+                min={1}
+                max={50}
+                value={batchLimit}
+                onChange={(e) => setBatchLimit(Math.max(1, Math.min(50, Number(e.target.value))))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleBatchAnalyze} disabled={batchSaving}>
+              {batchSaving ? "Запуск..." : "Запустить анализ"}
             </Button>
           </DialogFooter>
         </DialogContent>

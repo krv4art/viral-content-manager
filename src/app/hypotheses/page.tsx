@@ -72,6 +72,9 @@ type HypothesisItem = {
   priority: string;
   expectedResult: string | null;
   actualResult: string | null;
+  publicationUrl: string | null;
+  metrics: Record<string, unknown> | null;
+  learnings: string | null;
   tags: string[];
   createdAt: string;
 };
@@ -89,6 +92,20 @@ export default function HypothesesPage() {
   const [formFormat, setFormFormat] = useState("");
   const [formPriority, setFormPriority] = useState("medium");
   const [formExpectedResult, setFormExpectedResult] = useState("");
+
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editId, setEditId] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editFormat, setEditFormat] = useState("");
+  const [editPriority, setEditPriority] = useState("medium");
+  const [editExpectedResult, setEditExpectedResult] = useState("");
+  const [editActualResult, setEditActualResult] = useState("");
+  const [editPublicationUrl, setEditPublicationUrl] = useState("");
+  const [editLearnings, setEditLearnings] = useState("");
+  const [editTagsInput, setEditTagsInput] = useState("");
+  const [editMetrics, setEditMetrics] = useState<{ views: string; likes: string; comments: string; shares: string; saves: string }>({ views: "", likes: "", comments: "", shares: "", saves: "" });
+  const [editSaving, setEditSaving] = useState(false);
 
   const fetchHypotheses = useCallback(async () => {
     if (!projectId) {
@@ -154,6 +171,63 @@ export default function HypothesesPage() {
     } else {
       toast.error("Ошибка при удалении");
     }
+  };
+
+  const openEditDialog = (h: HypothesisItem) => {
+    setEditId(h.id);
+    setEditTitle(h.title);
+    setEditDescription(h.description || "");
+    setEditFormat(h.format || "");
+    setEditPriority(h.priority);
+    setEditExpectedResult(h.expectedResult || "");
+    setEditActualResult(h.actualResult || "");
+    setEditPublicationUrl(h.publicationUrl || "");
+    setEditLearnings(h.learnings || "");
+    setEditTagsInput(h.tags.join(", "));
+    const m = (h.metrics || {}) as Record<string, unknown>;
+    setEditMetrics({
+      views: String(m.views ?? ""),
+      likes: String(m.likes ?? ""),
+      comments: String(m.comments ?? ""),
+      shares: String(m.shares ?? ""),
+      saves: String(m.saves ?? ""),
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editTitle.trim()) {
+      toast.error("Укажите название гипотезы");
+      return;
+    }
+    setEditSaving(true);
+    const metricsObj: Record<string, number> = {};
+    if (editMetrics.views) metricsObj.views = Number(editMetrics.views);
+    if (editMetrics.likes) metricsObj.likes = Number(editMetrics.likes);
+    if (editMetrics.comments) metricsObj.comments = Number(editMetrics.comments);
+    if (editMetrics.shares) metricsObj.shares = Number(editMetrics.shares);
+    if (editMetrics.saves) metricsObj.saves = Number(editMetrics.saves);
+
+    const res = await updateHypothesis(editId, {
+      title: editTitle,
+      description: editDescription || undefined,
+      format: editFormat || undefined,
+      priority: editPriority,
+      expectedResult: editExpectedResult || undefined,
+      actualResult: editActualResult || undefined,
+      publicationUrl: editPublicationUrl || undefined,
+      metrics: Object.keys(metricsObj).length > 0 ? metricsObj : undefined,
+      learnings: editLearnings || undefined,
+      tags: editTagsInput.split(",").map((t) => t.trim()).filter(Boolean) || undefined,
+    });
+    if (res.success) {
+      toast.success("Гипотеза обновлена");
+      setEditDialogOpen(false);
+      fetchHypotheses();
+    } else {
+      toast.error("Ошибка при обновлении");
+    }
+    setEditSaving(false);
   };
 
   const handleDragStart = (id: string) => {
@@ -251,6 +325,14 @@ export default function HypothesesPage() {
                                   {h.title}
                                 </p>
                               </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 shrink-0"
+                                onClick={() => openEditDialog(h)}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -373,14 +455,24 @@ export default function HypothesesPage() {
                         {formatDate(h.createdAt)}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive"
-                          onClick={() => handleDelete(h.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => openEditDialog(h)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => handleDelete(h.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -456,6 +548,92 @@ export default function HypothesesPage() {
             </Button>
             <Button onClick={handleCreate} disabled={saving}>
               {saving ? "Создание..." : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Редактировать гипотезу</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Название</Label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Название гипотезы" />
+            </div>
+            <div className="space-y-2">
+              <Label>Описание</Label>
+              <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} placeholder="Описание гипотезы..." />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Формат</Label>
+                <Input value={editFormat} onChange={(e) => setEditFormat(e.target.value)} placeholder="Формат контента" />
+              </div>
+              <div className="space-y-2">
+                <Label>Приоритет</Label>
+                <Select value={editPriority} onValueChange={setEditPriority}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">Высокий</SelectItem>
+                    <SelectItem value="medium">Средний</SelectItem>
+                    <SelectItem value="low">Низкий</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Ожидаемый результат</Label>
+              <Textarea value={editExpectedResult} onChange={(e) => setEditExpectedResult(e.target.value)} rows={2} placeholder="Что ожидаем получить..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Фактический результат</Label>
+              <Textarea value={editActualResult} onChange={(e) => setEditActualResult(e.target.value)} rows={2} placeholder="Что получилось..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Ссылка на публикацию</Label>
+              <Input value={editPublicationUrl} onChange={(e) => setEditPublicationUrl(e.target.value)} placeholder="https://..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Метрики</Label>
+              <div className="grid grid-cols-5 gap-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Просмотры</Label>
+                  <Input type="number" value={editMetrics.views} onChange={(e) => setEditMetrics((m) => ({ ...m, views: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Лайки</Label>
+                  <Input type="number" value={editMetrics.likes} onChange={(e) => setEditMetrics((m) => ({ ...m, likes: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Комменты</Label>
+                  <Input type="number" value={editMetrics.comments} onChange={(e) => setEditMetrics((m) => ({ ...m, comments: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Шеры</Label>
+                  <Input type="number" value={editMetrics.shares} onChange={(e) => setEditMetrics((m) => ({ ...m, shares: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Сохранения</Label>
+                  <Input type="number" value={editMetrics.saves} onChange={(e) => setEditMetrics((m) => ({ ...m, saves: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Выводы</Label>
+              <Textarea value={editLearnings} onChange={(e) => setEditLearnings(e.target.value)} rows={2} placeholder="Что узнали..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Теги (через запятую)</Label>
+              <Input value={editTagsInput} onChange={(e) => setEditTagsInput(e.target.value)} placeholder="виральный, тест, тренд" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Отмена</Button>
+            <Button onClick={handleEdit} disabled={editSaving}>
+              {editSaving ? "Сохранение..." : "Сохранить"}
             </Button>
           </DialogFooter>
         </DialogContent>

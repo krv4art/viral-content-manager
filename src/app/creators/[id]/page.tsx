@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, FileDown } from "lucide-react";
-import { getCreator, updateCreator } from "@/actions/creators";
+import { ArrowLeft, Save, FileDown, Plus, X } from "lucide-react";
+import { getCreator, updateCreator, checkRunwareKey } from "@/actions/creators";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,8 @@ export default function CreatorDetailPage() {
   const [imageGenPrompt, setImageGenPrompt] = useState("");
   const [status, setStatus] = useState("draft");
   const [notes, setNotes] = useState("");
+  const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  const [newRefUrl, setNewRefUrl] = useState("");
 
   const fetchCreator = useCallback(async () => {
     const res = await getCreator(creatorId);
@@ -58,6 +60,7 @@ export default function CreatorDetailPage() {
       setImageGenPrompt((c.imageGenPrompt as string) || "");
       setStatus(c.status as string);
       setNotes((c.notes as string) || "");
+      setReferenceImages((c.referenceImages as string[]) || []);
     }
     setLoading(false);
   }, [creatorId]);
@@ -77,6 +80,7 @@ export default function CreatorDetailPage() {
       background: background || undefined,
       visualStyle: visualStyle || undefined,
       imageGenPrompt: imageGenPrompt || undefined,
+      referenceImages,
       status,
       notes: notes || undefined,
     });
@@ -145,7 +149,6 @@ ${notes}
     );
   }
 
-  const referenceImages = (creator.referenceImages as string[]) || [];
   const generatedImages = (creator.generatedImages as string[]) || [];
   const topHooks = creator.topHooks as Record<string, unknown> | null;
   const topScripts = creator.topScripts as Record<string, unknown> | null;
@@ -286,6 +289,20 @@ ${notes}
               placeholder="Промпт для генерации изображений..."
               className="font-mono text-sm"
             />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const res = await checkRunwareKey();
+                if (!res.available) {
+                  toast.error("Runware API key не настроен");
+                } else {
+                  toast.info("Генерация изображений будет реализована после получения ключа");
+                }
+              }}
+            >
+              Сгенерировать
+            </Button>
           </div>
 
           <div className="space-y-3">
@@ -293,21 +310,55 @@ ${notes}
             {referenceImages.length === 0 ? (
               <p className="text-sm text-muted-foreground">Нет референсных изображений</p>
             ) : (
-              <div className="grid grid-cols-4 gap-2">
+              <div className="space-y-2">
                 {referenceImages.map((url, i) => (
-                  <div
-                    key={i}
-                    className="aspect-square rounded-md bg-muted overflow-hidden"
-                  >
-                    <img
-                      src={url}
-                      alt={`Reference ${i + 1}`}
-                      className="h-full w-full object-cover"
+                  <div key={i} className="flex items-center gap-2">
+                    <div className="h-10 w-14 rounded bg-muted overflow-hidden shrink-0">
+                      <img src={url} alt={`Ref ${i + 1}`} className="h-full w-full object-cover" />
+                    </div>
+                    <Input
+                      value={url}
+                      readOnly
+                      className="flex-1 text-sm h-8"
                     />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-destructive"
+                      onClick={() => setReferenceImages((prev) => prev.filter((_, idx) => idx !== i))}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
                   </div>
                 ))}
               </div>
             )}
+            <div className="flex gap-2">
+              <Input
+                value={newRefUrl}
+                onChange={(e) => setNewRefUrl(e.target.value)}
+                placeholder="https://example.com/image.jpg"
+                className="flex-1 h-8 text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newRefUrl.trim()) {
+                    setReferenceImages((prev) => [...prev, newRefUrl.trim()]);
+                    setNewRefUrl("");
+                  }
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (newRefUrl.trim()) {
+                    setReferenceImages((prev) => [...prev, newRefUrl.trim()]);
+                    setNewRefUrl("");
+                  }
+                }}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-3">

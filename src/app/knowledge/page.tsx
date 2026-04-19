@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreVertical, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const CATEGORIES = [
   { id: "all", label: "Все" },
@@ -279,7 +281,7 @@ export default function KnowledgePage() {
               </div>
               {previewMode ? (
                 <div className="min-h-[200px] rounded-md border p-3 prose prose-sm dark:prose-invert max-w-none">
-                  {renderMarkdown(formContent)}
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{formContent}</ReactMarkdown>
                 </div>
               ) : (
                 <Textarea
@@ -389,44 +391,3 @@ function ArticleCard({
   );
 }
 
-function renderMarkdown(text: string): React.ReactNode {
-  const lines = text.split("\n");
-  return lines.map((line, i) => {
-    if (line.startsWith("### "))
-      return (
-        <h3 key={i} className="text-base font-semibold mt-3 mb-1">
-          {line.slice(4)}
-        </h3>
-      );
-    if (line.startsWith("## "))
-      return (
-        <h2 key={i} className="text-lg font-semibold mt-4 mb-2">
-          {line.slice(3)}
-        </h2>
-      );
-    if (line.startsWith("# "))
-      return (
-        <h1 key={i} className="text-xl font-bold mt-4 mb-2">
-          {line.slice(2)}
-        </h1>
-      );
-    if (line.startsWith("- "))
-      return (
-        <li key={i} className="ml-4 text-sm">
-          {line.slice(2)}
-        </li>
-      );
-    if (line.startsWith("**") && line.endsWith("**"))
-      return (
-        <p key={i} className="font-semibold text-sm">
-          {line.slice(2, -2)}
-        </p>
-      );
-    if (line.trim() === "") return <br key={i} />;
-    return (
-      <p key={i} className="text-sm">
-        {line}
-      </p>
-    );
-  });
-}

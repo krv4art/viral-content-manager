@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ExternalLink, Bookmark, BookmarkCheck, Sparkles } from "lucide-react";
-import { getVideo, toggleBookmark, updateAnalysis, updateVideo } from "@/actions/videos";
+import { getVideo, toggleBookmark, updateAnalysis, updateVideo, triggerAnalyzeVideo } from "@/actions/videos";
 import { formatNumber, formatPercent, formatDate, formatDuration } from "@/lib/utils/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,7 +87,12 @@ export default function VideoDetailPage() {
 
   const handleAnalyze = async () => {
     setAnalyzing(true);
-    toast.info("Анализ видео запущен. Это может занять некоторое время.");
+    const res = await triggerAnalyzeVideo(videoId);
+    if (res.success) {
+      toast.success("Анализ запущен. Результаты появятся через 1–2 минуты.");
+    } else {
+      toast.error("Ошибка при запуске анализа");
+    }
     setAnalyzing(false);
   };
 

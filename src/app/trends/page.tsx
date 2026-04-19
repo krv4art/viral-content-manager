@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Flame, Sun, Snowflake } from "lucide-react";
-import { getTrends, createTrend, deleteTrend } from "@/actions/trends";
+import { getTrends, createTrend, updateTrend, deleteTrend } from "@/actions/trends";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatDate } from "@/lib/utils/formatters";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,7 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Trash2 } from "lucide-react";
+import { MoreVertical, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 const TREND_TYPES = ["audio", "format", "topic", "challenge", "effect", "meme"];
@@ -76,6 +76,15 @@ export default function TrendsPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editId, setEditId] = useState<string>("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editType, setEditType] = useState("format");
+  const [editPlatform, setEditPlatform] = useState("");
+  const [editRelevance, setEditRelevance] = useState("warm");
+  const [editSaving, setEditSaving] = useState(false);
 
   const [filterType, setFilterType] = useState<string>("all");
   const [filterPlatform, setFilterPlatform] = useState<string>("all");
@@ -142,6 +151,39 @@ export default function TrendsPage() {
     } else {
       toast.error("Ошибка при удалении");
     }
+  };
+
+  const openEditDialog = (trend: TrendItem) => {
+    setEditId(trend.id);
+    setEditTitle(trend.title);
+    setEditDescription(trend.description || "");
+    setEditType(trend.type);
+    setEditPlatform(trend.platform || "");
+    setEditRelevance(trend.relevance);
+    setEditDialogOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editTitle.trim()) {
+      toast.error("Укажите название тренда");
+      return;
+    }
+    setEditSaving(true);
+    const res = await updateTrend(editId, {
+      title: editTitle,
+      description: editDescription || undefined,
+      type: editType,
+      platform: editPlatform || undefined,
+      relevance: editRelevance,
+    });
+    if (res.success) {
+      toast.success("Тренд обновлен");
+      setEditDialogOpen(false);
+      fetchTrends();
+    } else {
+      toast.error("Ошибка при обновлении");
+    }
+    setEditSaving(false);
   };
 
   if (!projectId) {
@@ -239,6 +281,10 @@ export default function TrendsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditDialog(trend)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Редактировать
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={() => handleDelete(trend.id)}
@@ -370,6 +416,86 @@ export default function TrendsPage() {
             </Button>
             <Button onClick={handleCreate} disabled={saving}>
               {saving ? "Добавление..." : "Добавить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Редактировать тренд</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Название</Label>
+              <Input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="Название тренда"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Описание</Label>
+              <Textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={3}
+                placeholder="Описание тренда..."
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Тип</Label>
+                <Select value={editType} onValueChange={setEditType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TREND_TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Платформа</Label>
+                <Select value={editPlatform} onValueChange={setEditPlatform}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PLATFORMS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Актуальность</Label>
+                <Select value={editRelevance} onValueChange={setEditRelevance}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="hot">Горячий</SelectItem>
+                    <SelectItem value="warm">Теплый</SelectItem>
+                    <SelectItem value="cold">Холодный</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleEdit} disabled={editSaving}>
+              {editSaving ? "Сохранение..." : "Сохранить"}
             </Button>
           </DialogFooter>
         </DialogContent>

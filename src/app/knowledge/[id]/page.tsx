@@ -22,6 +22,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const CATEGORIES = [
   { id: "strategy", label: "Стратегия" },
@@ -258,7 +260,7 @@ export default function ArticleDetailPage() {
               </p>
             )}
             <div className="prose prose-sm dark:prose-invert max-w-none">
-              {renderMarkdown(content)}
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
             </div>
             {((article.tags as string[]) || []).length > 0 && (
               <>
@@ -279,44 +281,3 @@ export default function ArticleDetailPage() {
   );
 }
 
-function renderMarkdown(text: string): React.ReactNode {
-  const lines = text.split("\n");
-  return lines.map((line, i) => {
-    if (line.startsWith("### "))
-      return (
-        <h3 key={i} className="text-base font-semibold mt-3 mb-1">
-          {line.slice(4)}
-        </h3>
-      );
-    if (line.startsWith("## "))
-      return (
-        <h2 key={i} className="text-lg font-semibold mt-4 mb-2">
-          {line.slice(3)}
-        </h2>
-      );
-    if (line.startsWith("# "))
-      return (
-        <h1 key={i} className="text-xl font-bold mt-4 mb-2">
-          {line.slice(2)}
-        </h1>
-      );
-    if (line.startsWith("- "))
-      return (
-        <li key={i} className="ml-4 text-sm">
-          {line.slice(2)}
-        </li>
-      );
-    if (line.startsWith("**") && line.endsWith("**"))
-      return (
-        <p key={i} className="font-semibold text-sm">
-          {line.slice(2, -2)}
-        </p>
-      );
-    if (line.trim() === "") return <br key={i} />;
-    return (
-      <p key={i} className="text-sm">
-        {line}
-      </p>
-    );
-  });
-}

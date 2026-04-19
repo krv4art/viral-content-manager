@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { inngest } from "@/lib/inngest/client";
 import { revalidatePath } from "next/cache";
 
 export async function getVideos(
@@ -251,5 +252,29 @@ export async function getTopVideos(projectId: string, limit: number = 10) {
     return { success: true, data: videos };
   } catch (error) {
     return { error: "Failed to fetch top videos" };
+  }
+}
+
+export async function triggerAnalyzeVideo(id: string) {
+  try {
+    const video = await prisma.video.findUnique({
+      where: { id },
+      select: { accountId: true },
+    });
+    if (!video) return { error: "Video not found" };
+
+    await inngest.send({ name: "analyze-video", data: { videoId: id } });
+    return { success: true };
+  } catch (error) {
+    return { error: "Failed to trigger analysis" };
+  }
+}
+
+export async function triggerBatchAnalyze(accountId: string, limit: number = 10) {
+  try {
+    await inngest.send({ name: "batch-analyze", data: { accountId, limit } });
+    return { success: true };
+  } catch (error) {
+    return { error: "Failed to trigger batch analysis" };
   }
 }

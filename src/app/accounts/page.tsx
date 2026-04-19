@@ -7,6 +7,12 @@ import { getAccounts, createAccount, triggerScrapeAccount } from "@/actions/acco
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatNumber, formatPercent, formatDate } from "@/lib/utils/formatters";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Table,
   TableBody,
   TableCell,
@@ -87,6 +93,15 @@ export default function AccountsPage() {
   useEffect(() => {
     fetchAccounts();
   }, [fetchAccounts]);
+
+  useEffect(() => {
+    const hasInProgress = accounts.some((a) => a.scrapeStatus === "in_progress");
+    if (!hasInProgress) return;
+    const interval = setInterval(() => {
+      fetchAccounts();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [accounts, fetchAccounts]);
 
   const handleCreate = async () => {
     if (!projectId || !formUrl.trim()) {
@@ -231,7 +246,33 @@ export default function AccountsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {formatDate(account.lastScrapedAt)}
+                    {account.scrapeStatus === "in_progress" ? (
+                      <Badge variant="outline" className="text-yellow-500 border-yellow-500/30 text-xs">
+                        <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                        Сбор...
+                      </Badge>
+                    ) : account.scrapeStatus === "error" ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="destructive" className="text-xs cursor-pointer" onClick={async () => {
+                              const res = await triggerScrapeAccount(account.id);
+                              if (res.success) {
+                                toast.success("Сбор данных запущен");
+                                setTimeout(fetchAccounts, 2000);
+                              } else {
+                                toast.error("Ошибка запуска сбора");
+                              }
+                            }}>
+                              Ошибка сбора
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>Ошибка сбора. Нажмите для повтора</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      formatDate(account.lastScrapedAt)
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">

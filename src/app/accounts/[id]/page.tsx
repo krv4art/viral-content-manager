@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ExternalLink } from "lucide-react";
-import { getAccount, updateAccount } from "@/actions/accounts";
+import { ArrowLeft, ExternalLink, RefreshCw } from "lucide-react";
+import { getAccount, updateAccount, triggerScrapeAccount } from "@/actions/accounts";
 import { formatNumber, formatPercent, formatDate } from "@/lib/utils/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ export default function AccountDetailPage() {
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
+  const [scraping, setScraping] = useState(false);
 
   const fetchAccount = useCallback(async () => {
     const res = await getAccount(accountId);
@@ -42,6 +43,35 @@ export default function AccountDetailPage() {
   useEffect(() => {
     fetchAccount();
   }, [fetchAccount]);
+
+  useEffect(() => {
+    if (!account) return;
+    const status = account.scrapeStatus as string;
+    if (status !== "in_progress") return;
+    const interval = setInterval(() => {
+      getAccount(accountId).then((res) => {
+        if (res.success && res.data) {
+          setAccountData(res.data as unknown as Record<string, unknown>);
+          if ((res.data as { scrapeStatus: string }).scrapeStatus !== "in_progress") {
+            setScraping(false);
+          }
+        }
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [account, accountId]);
+
+  const handleRefresh = async () => {
+    setScraping(true);
+    const res = await triggerScrapeAccount(accountId);
+    if (res.success) {
+      toast.success("Сбор данных запущен");
+      setTimeout(fetchAccount, 2000);
+    } else {
+      toast.error("Ошибка запуска сбора");
+      setScraping(false);
+    }
+  };
 
   const handleSaveNotes = async () => {
     setSavingNotes(true);
@@ -88,6 +118,18 @@ export default function AccountDetailPage() {
         </h1>
         <Badge variant="secondary">{account.platform as string}</Badge>
         <Badge variant="outline">{account.category as string}</Badge>
+        {(account.scrapeStatus as string) === "in_progress" && (
+          <Badge variant="outline" className="text-yellow-500 border-yellow-500/30">Сбор данных...</Badge>
+        )}
+        {(account.scrapeStatus as string) === "error" && (
+          <Badge variant="destructive">Ошибка сбора</Badge>
+        )}
+        <div className="ml-auto">
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={scraping}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${scraping ? "animate-spin" : ""}`} />
+            {scraping ? "Обновление..." : "Обновить данные"}
+          </Button>
+        </div>
       </div>
 
       <Card>
