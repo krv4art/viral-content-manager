@@ -12,13 +12,15 @@ export const scrapeAccount = inngest.createFunction(
     name: "Scrape Account",
     retries: 2,
     triggers: [{ event: "scrape-account" }],
-    onFailure: async ({ event, error }) => {
-      const { accountId } = event.data as unknown as { accountId: string };
+    onFailure: async ({ event }) => {
+      // In Inngest failure events the original payload is at event.data.event.data
+      const originalData = (event.data as unknown as { event: { data: { accountId: string } } }).event?.data;
+      const accountId = originalData?.accountId;
+      if (!accountId) return;
       await prisma.account.update({
         where: { id: accountId },
         data: { scrapeStatus: "error" },
-      });
-      console.error(`Scrape failed for account ${accountId}:`, error);
+      }).catch(() => {});
     },
   },
   async ({ event, step }) => {

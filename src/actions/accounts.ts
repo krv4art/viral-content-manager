@@ -141,6 +141,26 @@ export async function deleteAccount(id: string) {
   }
 }
 
+export async function resetStuckAccounts(projectId: string) {
+  try {
+    // Считаем задачу зависшей если она in_progress больше 5 минут
+    const stuckThreshold = new Date(Date.now() - 5 * 60 * 1000);
+    const result = await prisma.account.updateMany({
+      where: {
+        projectId,
+        scrapeStatus: "in_progress",
+        updatedAt: { lt: stuckThreshold },
+      },
+      data: { scrapeStatus: "error" },
+    });
+    revalidatePath(`/projects/${projectId}/accounts`);
+    revalidatePath("/accounts");
+    return { success: true, count: result.count };
+  } catch (error) {
+    return { error: "Failed to reset stuck accounts" };
+  }
+}
+
 export async function updateScrapeStatus(
   id: string,
   status: "idle" | "in_progress" | "error"

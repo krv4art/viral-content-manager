@@ -47,6 +47,7 @@ export async function scrapeAccountProfile(
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: getHeaders(),
+    signal: AbortSignal.timeout(25000),
   });
 
   if (!response.ok) {
@@ -109,6 +110,7 @@ async function scrapeTikTokVideos(
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: getHeaders(),
+    signal: AbortSignal.timeout(30000),
   });
 
   if (!response.ok) {
@@ -163,6 +165,7 @@ async function scrapeInstagramReels(
   const response = await fetch(url.toString(), {
     method: "GET",
     headers: getHeaders(),
+    signal: AbortSignal.timeout(30000),
   });
 
   if (!response.ok) {

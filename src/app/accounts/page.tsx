@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Plus, RefreshCw, ExternalLink } from "lucide-react";
-import { getAccounts, createAccount, triggerScrapeAccount } from "@/actions/accounts";
+import { Plus, RefreshCw, ExternalLink, Square } from "lucide-react";
+import { getAccounts, createAccount, triggerScrapeAccount, resetStuckAccounts, updateScrapeStatus } from "@/actions/accounts";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatNumber, formatPercent, formatDate } from "@/lib/utils/formatters";
 import {
@@ -276,23 +276,45 @@ export default function AccountsPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        title="Обновить данные"
-                        onClick={async () => {
-                          const res = await triggerScrapeAccount(account.id);
-                          if (res.success) {
-                            toast.success("Сбор данных запущен");
-                            setTimeout(fetchAccounts, 2000);
-                          } else {
-                            toast.error("Ошибка запуска сбора");
-                          }
-                        }}
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      </Button>
+                      {account.scrapeStatus === "in_progress" ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={async () => {
+                                  await updateScrapeStatus(account.id, "error");
+                                  toast.success("Задача остановлена");
+                                  fetchAccounts();
+                                }}
+                              >
+                                <Square className="h-3.5 w-3.5 fill-current" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Остановить задачу</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="Обновить данные"
+                          onClick={async () => {
+                            const res = await triggerScrapeAccount(account.id);
+                            if (res.success) {
+                              toast.success("Сбор данных запущен");
+                              setTimeout(fetchAccounts, 2000);
+                            } else {
+                              toast.error("Ошибка запуска сбора");
+                            }
+                          }}
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Link href={`/accounts/${account.id}`}>
                         <Button
                           variant="ghost"
