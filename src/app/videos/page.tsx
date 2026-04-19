@@ -8,6 +8,8 @@ import {
   BookmarkCheck,
   ArrowUpDown,
   Sparkles,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { getVideos, createVideo, toggleBookmark, triggerBatchAnalyze } from "@/actions/videos";
 import { getAccounts } from "@/actions/accounts";
@@ -78,6 +80,12 @@ export default function VideosPage() {
   const [filterAccount, setFilterAccount] = useState<string>("all");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterBookmarked, setFilterBookmarked] = useState(false);
+
+  const setFilterAndReset = {
+    account: (v: string) => { setFilterAccount(v); setPage(0); },
+    type: (v: string) => { setFilterType(v); setPage(0); },
+    bookmarked: () => { setFilterBookmarked((b) => !b); setPage(0); },
+  };
   const [sortField, setSortField] = useState<string>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -90,6 +98,10 @@ export default function VideosPage() {
   const [batchLimit, setBatchLimit] = useState(10);
   const [batchSaving, setBatchSaving] = useState(false);
 
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+
   const fetchVideos = useCallback(async () => {
     if (!projectId) {
       setLoading(false);
@@ -100,12 +112,15 @@ export default function VideosPage() {
       accountId: filterAccount !== "all" ? filterAccount : undefined,
       type: filterType !== "all" ? filterType : undefined,
       isBookmarked: filterBookmarked ? true : undefined,
+      take: PAGE_SIZE,
+      skip: page * PAGE_SIZE,
     });
     if (res.success && res.data) {
       setVideos(res.data as unknown as VideoItem[]);
+      setTotal((res as unknown as { total: number }).total ?? 0);
     }
     setLoading(false);
-  }, [projectId, filterAccount, filterType, filterBookmarked]);
+  }, [projectId, filterAccount, filterType, filterBookmarked, page]);
 
   const fetchAccounts = useCallback(async () => {
     if (!projectId) return;
@@ -251,7 +266,7 @@ export default function VideosPage() {
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <Select value={filterAccount} onValueChange={setFilterAccount}>
+        <Select value={filterAccount} onValueChange={setFilterAndReset.account}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Аккаунт" />
           </SelectTrigger>
@@ -264,7 +279,7 @@ export default function VideosPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={filterType} onValueChange={setFilterType}>
+        <Select value={filterType} onValueChange={setFilterAndReset.type}>
           <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="Тип" />
           </SelectTrigger>
@@ -278,7 +293,7 @@ export default function VideosPage() {
         <Button
           variant={filterBookmarked ? "default" : "outline"}
           size="sm"
-          onClick={() => setFilterBookmarked(!filterBookmarked)}
+          onClick={setFilterAndReset.bookmarked}
         >
           <Bookmark className="mr-1 h-3.5 w-3.5" />
           Избранное
@@ -381,6 +396,34 @@ export default function VideosPage() {
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} из {total}
+          </span>
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={page === 0}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={(page + 1) * PAGE_SIZE >= total}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
 
