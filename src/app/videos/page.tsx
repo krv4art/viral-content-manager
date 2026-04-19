@@ -321,12 +321,12 @@ export default function VideosPage() {
               <TableRow>
                 <TableHead className="w-[60px]" />
                 <TableHead>Описание</TableHead>
-                <TableHead>
+                <TableHead className="text-right">
                   Просмотры
                   <SortButton field="viewsCount" />
                 </TableHead>
-                <TableHead>Лайки</TableHead>
-                <TableHead>
+                <TableHead className="text-right">Лайки</TableHead>
+                <TableHead className="text-right">
                   ER
                   <SortButton field="engagementRate" />
                 </TableHead>
