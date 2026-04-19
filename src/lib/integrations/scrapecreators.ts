@@ -103,7 +103,7 @@ async function scrapeTikTokVideos(
   username: string,
   limit?: number
 ): Promise<ScrapeVideoResult[]> {
-  const url = new URL("/v2/tiktok/profile-videos", BASE_URL);
+  const url = new URL("/v3/tiktok/profile/videos", BASE_URL);
   url.searchParams.set("handle", username.replace(/^@/, ""));
 
   const response = await fetch(url.toString(), {
@@ -119,33 +119,36 @@ async function scrapeTikTokVideos(
   }
 
   const data = await response.json();
-  const rawVideos: Record<string, unknown>[] = data.videos ?? data.itemList ?? data ?? [];
+  const rawVideos: Record<string, unknown>[] = data.aweme_list ?? data.videos ?? data.itemList ?? [];
   const sliced = limit ? rawVideos.slice(0, limit) : rawVideos;
 
   return sliced.map((v) => {
-    const stats = (v.stats ?? v) as Record<string, unknown>;
+    const stats = (v.statistics ?? v.stats ?? {}) as Record<string, unknown>;
     const music = v.music as Record<string, unknown> | undefined;
     const videoMeta = v.video as Record<string, unknown> | undefined;
-    const challenges = (v.challenges ?? v.hashtags ?? []) as Array<Record<string, unknown>>;
+    const challenges = (v.text_extra ?? v.challenges ?? v.hashtags ?? []) as Array<Record<string, unknown>>;
+    const playUrls = (videoMeta?.play_addr as Record<string, unknown> | undefined)?.url_list as string[] | undefined;
 
     return {
-      videoId: String(v.id ?? v.videoId ?? ""),
-      url: String(videoMeta?.playAddr ?? v.url ?? v.webVideoUrl ?? ""),
-      description: (v.desc ?? v.description ?? v.caption ?? null) as string | null,
-      thumbnailUrl: (videoMeta?.originCover ?? videoMeta?.cover ?? v.thumbnailUrl ?? null) as string | null,
-      durationSeconds: ((videoMeta?.duration ?? v.durationSeconds ?? v.duration ?? null) as number | null),
-      viewsCount: (stats.playCount ?? stats.viewCount ?? null) as number | null,
-      likesCount: (stats.diggCount ?? stats.likeCount ?? null) as number | null,
-      commentsCount: (stats.commentCount ?? null) as number | null,
-      sharesCount: (stats.shareCount ?? null) as number | null,
-      savesCount: (stats.collectCount ?? stats.saveCount ?? null) as number | null,
-      postedAt: v.createTime
-        ? new Date(Number(v.createTime) * 1000).toISOString()
-        : (v.postedAt as string | null) ?? null,
+      videoId: String(v.aweme_id ?? v.id ?? v.videoId ?? ""),
+      url: playUrls?.[0] ?? String(v.url ?? v.webVideoUrl ?? ""),
+      description: (v.desc ?? v.description ?? null) as string | null,
+      thumbnailUrl: ((videoMeta?.dynamic_cover as Record<string, unknown> | undefined)?.url_list as string[] | undefined)?.[0]
+        ?? ((videoMeta?.origin_cover as Record<string, unknown> | undefined)?.url_list as string[] | undefined)?.[0]
+        ?? null,
+      durationSeconds: (videoMeta?.duration ?? v.durationSeconds ?? null) as number | null,
+      viewsCount: (stats.play_count ?? stats.playCount ?? null) as number | null,
+      likesCount: (stats.digg_count ?? stats.diggCount ?? null) as number | null,
+      commentsCount: (stats.comment_count ?? stats.commentCount ?? null) as number | null,
+      sharesCount: (stats.share_count ?? stats.shareCount ?? null) as number | null,
+      savesCount: (stats.collect_count ?? stats.collectCount ?? null) as number | null,
+      postedAt: v.create_time ?? v.createTime
+        ? new Date(Number(v.create_time ?? v.createTime) * 1000).toISOString()
+        : null,
       hashtags: challenges
-        .map((c) => String(c.title ?? c.name ?? c))
+        .map((c) => String(c.hashtag_name ?? c.title ?? c.name ?? ""))
         .filter(Boolean),
-      musicName: (music?.title ?? music?.name ?? v.musicName ?? null) as string | null,
+      musicName: (music?.title ?? music?.name ?? null) as string | null,
     };
   });
 }
