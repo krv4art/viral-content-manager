@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Plus, RefreshCw, ExternalLink } from "lucide-react";
-import { getAccounts, createAccount } from "@/actions/accounts";
+import { getAccounts, createAccount, triggerScrapeAccount } from "@/actions/accounts";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatNumber, formatPercent, formatDate } from "@/lib/utils/formatters";
 import {
@@ -240,7 +240,15 @@ export default function AccountsPage() {
                         size="icon"
                         className="h-8 w-8"
                         title="Обновить данные"
-                        onClick={() => toast.info("Сбор данных запущен")}
+                        onClick={async () => {
+                          const res = await triggerScrapeAccount(account.id);
+                          if (res.success) {
+                            toast.success("Сбор данных запущен");
+                            setTimeout(fetchAccounts, 2000);
+                          } else {
+                            toast.error("Ошибка запуска сбора");
+                          }
+                        }}
                       >
                         <RefreshCw className="h-3.5 w-3.5" />
                       </Button>

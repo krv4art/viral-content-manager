@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { inngest } from "@/lib/inngest/client";
 import { revalidatePath } from "next/cache";
 
 export async function getAccounts(
@@ -71,11 +72,28 @@ export async function createAccount(data: {
         tags: data.tags ?? [],
       },
     });
+    await inngest.send({ name: "scrape-account", data: { accountId: account.id } });
+
     revalidatePath(`/projects/${data.projectId}`);
     revalidatePath(`/projects/${data.projectId}/accounts`);
     return { success: true, data: account };
   } catch (error) {
     return { error: "Failed to create account" };
+  }
+}
+
+export async function triggerScrapeAccount(id: string) {
+  try {
+    const account = await prisma.account.findUnique({ where: { id }, select: { projectId: true } });
+    if (!account) return { error: "Account not found" };
+
+    await prisma.account.update({ where: { id }, data: { scrapeStatus: "in_progress" } });
+    await inngest.send({ name: "scrape-account", data: { accountId: id } });
+
+    revalidatePath(`/projects/${account.projectId}/accounts`);
+    return { success: true };
+  } catch (error) {
+    return { error: "Failed to trigger scrape" };
   }
 }
 
