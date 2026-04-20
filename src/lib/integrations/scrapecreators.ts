@@ -1,8 +1,10 @@
+import { getApiKey } from "@/lib/settings";
+
 const BASE_URL = "https://api.scrapecreators.com";
 
-function getHeaders(): HeadersInit {
+async function getHeaders(): Promise<HeadersInit> {
   return {
-    "x-api-key": process.env.SCRAPECREATORS_API_KEY ?? "",
+    "x-api-key": await getApiKey("scrapecreatorsApiKey"),
     "Content-Type": "application/json",
   };
 }
@@ -46,7 +48,7 @@ export async function scrapeAccountProfile(
 
   const response = await fetch(url.toString(), {
     method: "GET",
-    headers: getHeaders(),
+    headers: await getHeaders(),
     signal: AbortSignal.timeout(25000),
   });
 
@@ -90,6 +92,166 @@ export async function scrapeAccountProfile(
   }
 }
 
+export async function scrapeSingleVideo(
+  platform: string,
+  videoId: string,
+  videoUrl?: string
+): Promise<ScrapeVideoResult | null> {
+  const platformLower = platform.toLowerCase();
+
+  if (platformLower === "instagram") {
+    return scrapeSingleInstagramVideo(videoId, videoUrl);
+  }
+
+  if (platformLower !== "tiktok") return null;
+
+  // try by URL first (more reliable), then by aweme_id
+  const attempts = [
+    ...(videoUrl ? [{ key: "url", val: videoUrl }] : []),
+    { key: "aweme_id", val: videoId },
+  ];
+
+  let data: Record<string, unknown> | null = null;
+
+  for (const attempt of attempts) {
+    try {
+      const reqUrl = new URL("/v1/tiktok/video", BASE_URL);
+      reqUrl.searchParams.set(attempt.key, attempt.val);
+      console.log(`[scrapeSingleVideo] trying ${reqUrl.toString()}`);
+
+      const response = await fetch(reqUrl.toString(), {
+        method: "GET",
+        headers: await getHeaders(),
+        signal: AbortSignal.timeout(25000),
+      });
+
+      console.log(`[scrapeSingleVideo] status: ${response.status}`);
+      const bodyText = await response.text();
+      console.log(`[scrapeSingleVideo] body preview: ${bodyText.slice(0, 300)}`);
+
+      if (!response.ok) continue;
+
+      const body = JSON.parse(bodyText) as Record<string, unknown>;
+      if (body.aweme_detail || (body.itemInfo as Record<string, unknown> | undefined)?.itemStruct || body.video) {
+        data = body;
+        break;
+      }
+    } catch (e) {
+      console.error(`[scrapeSingleVideo] attempt failed:`, e);
+    }
+  }
+
+  if (!data) return null;
+  const v = (data.aweme_detail ?? (data.itemInfo as Record<string, unknown> | undefined)?.itemStruct ?? data.video ?? data) as Record<string, unknown>;
+  if (!v || !v.aweme_id) return null;
+
+  const stats = (v.statistics ?? v.stats ?? {}) as Record<string, unknown>;
+  const music = v.music as Record<string, unknown> | undefined;
+  const videoMeta = v.video as Record<string, unknown> | undefined;
+  const challenges = (v.text_extra ?? v.challenges ?? v.hashtags ?? []) as Array<Record<string, unknown>>;
+  const playUrls = (videoMeta?.play_addr as Record<string, unknown> | undefined)?.url_list as string[] | undefined;
+
+  const resolvedId = String(v.aweme_id ?? videoId);
+  const author = (v.author as Record<string, unknown> | undefined)?.uniqueId ?? (v.author as Record<string, unknown> | undefined)?.unique_id;
+  return {
+    videoId: resolvedId,
+    url: author
+      ? `https://www.tiktok.com/@${author}/video/${resolvedId}`
+      : String(v.webVideoUrl ?? v.url ?? ""),
+    description: (v.desc ?? v.description ?? null) as string | null,
+    thumbnailUrl: ((videoMeta?.dynamic_cover as Record<string, unknown> | undefined)?.url_list as string[] | undefined)?.[0]
+      ?? ((videoMeta?.origin_cover as Record<string, unknown> | undefined)?.url_list as string[] | undefined)?.[0]
+      ?? null,
+    durationSeconds: (videoMeta?.duration ?? v.durationSeconds ?? null) as number | null,
+    viewsCount: (stats.play_count ?? stats.playCount ?? null) as number | null,
+    likesCount: (stats.digg_count ?? stats.diggCount ?? null) as number | null,
+    commentsCount: (stats.comment_count ?? stats.commentCount ?? null) as number | null,
+    sharesCount: (stats.share_count ?? stats.shareCount ?? null) as number | null,
+    savesCount: (stats.collect_count ?? stats.collectCount ?? null) as number | null,
+    postedAt: v.create_time ?? v.createTime
+      ? new Date(Number(v.create_time ?? v.createTime) * 1000).toISOString()
+      : null,
+    hashtags: challenges
+      .map((c) => String(c.hashtag_name ?? c.title ?? c.name ?? ""))
+      .filter(Boolean),
+    musicName: (music?.title ?? music?.name ?? null) as string | null,
+  };
+}
+
+async function scrapeSingleInstagramVideo(
+  videoId: string,
+  videoUrl?: string
+): Promise<ScrapeVideoResult | null> {
+  const attempts: Array<{ endpoint: string; param: string; val: string }> = [];
+
+  if (videoUrl) {
+    attempts.push({ endpoint: "/v1/instagram/post", param: "url", val: videoUrl });
+    attempts.push({ endpoint: "/v1/instagram/reel", param: "url", val: videoUrl });
+  }
+  attempts.push({ endpoint: "/v1/instagram/post", param: "shortcode", val: videoId });
+
+  for (const attempt of attempts) {
+    try {
+      const reqUrl = new URL(attempt.endpoint, BASE_URL);
+      reqUrl.searchParams.set(attempt.param, attempt.val);
+      console.log(`[scrapeSingleInstagramVideo] trying ${reqUrl.toString()}`);
+
+      const response = await fetch(reqUrl.toString(), {
+        method: "GET",
+        headers: await getHeaders(),
+        signal: AbortSignal.timeout(25000),
+      });
+
+      console.log(`[scrapeSingleInstagramVideo] status: ${response.status}`);
+      const bodyText = await response.text();
+      console.log(`[scrapeSingleInstagramVideo] body preview: ${bodyText.slice(0, 300)}`);
+
+      if (!response.ok) continue;
+
+      const body = JSON.parse(bodyText) as Record<string, unknown>;
+      const graphql = body.graphql as Record<string, unknown> | undefined;
+      const items = body.items
+        ? (body.items as Array<Record<string, unknown>>)
+        : body.item
+          ? [body.item as Record<string, unknown>]
+          : graphql?.shortcode_media
+            ? [graphql.shortcode_media as Record<string, unknown>]
+            : [body];
+
+      for (const v of items) {
+        const pk = String(v.pk ?? v.id ?? "");
+        if (!pk) continue;
+
+        const caption = v.caption as Record<string, unknown> | null;
+        const imageVersions = v.image_versions2 as Record<string, unknown> | undefined;
+        const candidates = (imageVersions?.candidates as Array<Record<string, unknown>> | undefined) ?? [];
+
+        return {
+          videoId: pk,
+          url: String(v.video_url ?? v.url ?? ""),
+          description: (caption?.text ?? v.caption_text ?? null) as string | null,
+          thumbnailUrl: (candidates[0]?.url ?? v.thumbnail_url ?? null) as string | null,
+          durationSeconds: (v.video_duration ?? v.duration ?? null) as number | null,
+          viewsCount: (v.play_count ?? v.view_count ?? null) as number | null,
+          likesCount: (v.like_count ?? null) as number | null,
+          commentsCount: (v.comment_count ?? null) as number | null,
+          sharesCount: (v.share_count ?? null) as number | null,
+          savesCount: (v.save_count ?? null) as number | null,
+          postedAt: v.taken_at
+            ? new Date(Number(v.taken_at) * 1000).toISOString()
+            : null,
+          hashtags: [],
+          musicName: null,
+        };
+      }
+    } catch (e) {
+      console.error(`[scrapeSingleInstagramVideo] attempt failed:`, e);
+    }
+  }
+
+  return null;
+}
+
 export async function scrapeAccountVideos(
   platform: string,
   username: string,
@@ -113,7 +275,7 @@ async function scrapeTikTokVideos(
 
   const response = await fetch(url.toString(), {
     method: "GET",
-    headers: getHeaders(),
+    headers: await getHeaders(),
     signal: AbortSignal.timeout(30000),
   });
 
@@ -133,11 +295,10 @@ async function scrapeTikTokVideos(
     const music = v.music as Record<string, unknown> | undefined;
     const videoMeta = v.video as Record<string, unknown> | undefined;
     const challenges = (v.text_extra ?? v.challenges ?? v.hashtags ?? []) as Array<Record<string, unknown>>;
-    const playUrls = (videoMeta?.play_addr as Record<string, unknown> | undefined)?.url_list as string[] | undefined;
-
+    const vid = String(v.aweme_id ?? v.id ?? v.videoId ?? "");
     return {
-      videoId: String(v.aweme_id ?? v.id ?? v.videoId ?? ""),
-      url: playUrls?.[0] ?? String(v.url ?? v.webVideoUrl ?? ""),
+      videoId: vid,
+      url: vid ? `https://www.tiktok.com/@${username.replace(/^@/, "")}/video/${vid}` : String(v.url ?? v.webVideoUrl ?? ""),
       description: (v.desc ?? v.description ?? null) as string | null,
       thumbnailUrl: ((videoMeta?.dynamic_cover as Record<string, unknown> | undefined)?.url_list as string[] | undefined)?.[0]
         ?? ((videoMeta?.origin_cover as Record<string, unknown> | undefined)?.url_list as string[] | undefined)?.[0]
@@ -168,7 +329,7 @@ async function scrapeInstagramReels(
 
   const response = await fetch(url.toString(), {
     method: "GET",
-    headers: getHeaders(),
+    headers: await getHeaders(),
     signal: AbortSignal.timeout(30000),
   });
 

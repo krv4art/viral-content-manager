@@ -3,21 +3,27 @@
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
+function toWhere(val: string | string[] | undefined) {
+  if (!val) return undefined;
+  if (Array.isArray(val)) return val.length > 0 ? { in: val } : undefined;
+  return val;
+}
+
 export async function getTrends(
   projectId: string,
   filters?: {
-    type?: string;
-    platform?: string;
-    relevance?: string;
+    type?: string | string[];
+    platform?: string | string[];
+    relevance?: string | string[];
   }
 ) {
   try {
     const trends = await prisma.trend.findMany({
       where: {
         projectId,
-        ...(filters?.type && { type: filters.type }),
-        ...(filters?.platform && { platform: filters.platform }),
-        ...(filters?.relevance && { relevance: filters.relevance }),
+        ...(filters?.type && { type: toWhere(filters.type) }),
+        ...(filters?.platform && { platform: toWhere(filters.platform) }),
+        ...(filters?.relevance && { relevance: toWhere(filters.relevance) }),
       },
       orderBy: { createdAt: "desc" },
     });

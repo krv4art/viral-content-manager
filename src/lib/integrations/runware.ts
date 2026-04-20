@@ -1,3 +1,5 @@
+import { getApiKey } from "@/lib/settings";
+
 const RUNWARE_API_URL = "https://api.runware.ai/v1";
 
 interface RunwareImageResponse {
@@ -28,9 +30,9 @@ export async function generateImage(
     negativePrompt?: string;
   }
 ): Promise<string> {
-  const apiKey = process.env.RUNWARE_API_KEY;
+  const apiKey = await getApiKey("runwareApiKey");
   if (!apiKey) {
-    throw new Error("RUNWARE_API_KEY environment variable is not set");
+    throw new Error("Runware API key not configured");
   }
 
   const taskUUID = crypto.randomUUID();

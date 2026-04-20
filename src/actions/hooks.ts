@@ -3,12 +3,24 @@
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
+function toWhere(val: string | string[] | undefined) {
+  if (!val) return undefined;
+  if (Array.isArray(val)) return val.length > 0 ? { in: val } : undefined;
+  return val;
+}
+
+function toNumberWhere(val: number | number[] | undefined) {
+  if (!val) return undefined;
+  if (Array.isArray(val)) return val.length > 0 ? { in: val } : undefined;
+  return val;
+}
+
 export async function getHooks(
   projectId: string,
   filters?: {
-    hookType?: string;
-    language?: string;
-    rating?: number;
+    hookType?: string | string[];
+    language?: string | string[];
+    rating?: number | number[];
     isUsed?: boolean;
     tags?: string[];
   }
@@ -17,9 +29,9 @@ export async function getHooks(
     const hooks = await prisma.hook.findMany({
       where: {
         projectId,
-        ...(filters?.hookType && { hookType: filters.hookType }),
-        ...(filters?.language && { language: filters.language }),
-        ...(filters?.rating !== undefined && { rating: filters.rating }),
+        ...(filters?.hookType && { hookType: toWhere(filters.hookType) }),
+        ...(filters?.language && { language: toWhere(filters.language) }),
+        ...(filters?.rating !== undefined && { rating: toNumberWhere(filters.rating) }),
         ...(filters?.isUsed !== undefined && { isUsed: filters.isUsed }),
         ...(filters?.tags &&
           filters.tags.length > 0 && {

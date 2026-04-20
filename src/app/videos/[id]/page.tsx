@@ -144,7 +144,9 @@ export default function VideoDetailPage() {
               {video.description?.slice(0, 60) || "Видео"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              @{account.username} / {account.platform}
+              {account
+                ? `@${account.username} / ${account.platform}`
+                : "Аккаунт удалён"}
             </p>
           </div>
         </div>

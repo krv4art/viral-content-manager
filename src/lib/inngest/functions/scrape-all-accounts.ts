@@ -6,12 +6,21 @@ export const scrapeAllAccounts = inngest.createFunction(
     id: "scrape-all-accounts",
     name: "Scrape All Accounts (Weekly Cron)",
     retries: 1,
-    triggers: [{ cron: "0 3 * * 1" }], // каждый понедельник в 03:00 UTC
+    triggers: [{ cron: "0 3 * * 1" }],
   },
   async ({ step }) => {
+    const enabled = await step.run("check-settings", async () => {
+      const s = await prisma.settings.findUnique({ where: { id: "global" } });
+      return s?.autoScrapeEnabled ?? true;
+    });
+
+    if (!enabled) {
+      return { success: true, skipped: true, reason: "autoScrapeEnabled is false" };
+    }
+
     const accounts = await step.run("get-all-accounts", async () => {
       return prisma.account.findMany({
-        where: { scrapeStatus: { not: "in_progress" } },
+        where: { scrapeStatus: { not: "in_progress" }, autoScrape: true },
         select: { id: true },
       });
     });
@@ -27,6 +36,14 @@ export const scrapeAllAccounts = inngest.createFunction(
         data: { accountId: a.id },
       }))
     );
+
+    await step.run("update-last-run", async () => {
+      return prisma.settings.upsert({
+        where: { id: "global" },
+        create: { id: "global", lastAutoScrapeAt: new Date() },
+        update: { lastAutoScrapeAt: new Date() },
+      });
+    });
 
     return { success: true, accountCount: accounts.length };
   }

@@ -3,12 +3,24 @@
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
+function toWhere(val: string | string[] | undefined) {
+  if (!val) return undefined;
+  if (Array.isArray(val)) return val.length > 0 ? { in: val } : undefined;
+  return val;
+}
+
+function toNumberWhere(val: number | number[] | undefined) {
+  if (!val) return undefined;
+  if (Array.isArray(val)) return val.length > 0 ? { in: val } : undefined;
+  return val;
+}
+
 export async function getScripts(
   projectId: string,
   filters?: {
-    format?: string;
-    language?: string;
-    rating?: number;
+    format?: string | string[];
+    language?: string | string[];
+    rating?: number | number[];
     isUsed?: boolean;
   }
 ) {
@@ -16,9 +28,9 @@ export async function getScripts(
     const scripts = await prisma.script.findMany({
       where: {
         projectId,
-        ...(filters?.format && { format: filters.format }),
-        ...(filters?.language && { language: filters.language }),
-        ...(filters?.rating !== undefined && { rating: filters.rating }),
+        ...(filters?.format && { format: toWhere(filters.format) }),
+        ...(filters?.language && { language: toWhere(filters.language) }),
+        ...(filters?.rating !== undefined && { rating: toNumberWhere(filters.rating) }),
         ...(filters?.isUsed !== undefined && { isUsed: filters.isUsed }),
       },
       orderBy: { createdAt: "desc" },

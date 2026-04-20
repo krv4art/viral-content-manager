@@ -12,8 +12,10 @@ import {
   FileText,
   Drama,
   Flame,
+  Tags,
   FlaskConical,
   BookOpen,
+  Settings,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
@@ -35,8 +37,10 @@ const navItems = [
   { href: "/scripts", label: "Сценарии", icon: FileText },
   { href: "/creators", label: "Криейторы", icon: Drama },
   { href: "/trends", label: "Тренды", icon: Flame },
+  { href: "/keywords", label: "Ключевые слова", icon: Tags },
   { href: "/hypotheses", label: "Гипотезы", icon: FlaskConical },
   { href: "/knowledge", label: "База знаний", icon: BookOpen },
+  { href: "/settings", label: "Настройки", icon: Settings },
 ];
 
 export function Sidebar() {

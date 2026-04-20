@@ -4,19 +4,33 @@ import { prisma } from "@/lib/db";
 import { inngest } from "@/lib/inngest/client";
 import { revalidatePath } from "next/cache";
 
+function toWhere(val: string | string[] | undefined) {
+  if (!val) return undefined;
+  if (Array.isArray(val)) return val.length > 0 ? { in: val } : undefined;
+  return val;
+}
+
 export async function getAccounts(
   projectId: string,
   filters?: {
-    platform?: string;
-    category?: string;
+    platform?: string | string[];
+    category?: string | string[];
+    tag?: string | string[];
+    minAvgViews?: number;
+    maxFollowers?: number;
+    minMedianViews?: number;
   }
 ) {
   try {
     const accounts = await prisma.account.findMany({
       where: {
         projectId,
-        ...(filters?.platform && { platform: filters.platform }),
-        ...(filters?.category && { category: filters.category }),
+        ...(filters?.platform && { platform: toWhere(filters.platform) }),
+        ...(filters?.category && { category: toWhere(filters.category) }),
+        ...(filters?.tag && Array.isArray(filters.tag) && filters.tag.length > 0 && { tags: { hasSome: filters.tag } }),
+        ...(filters?.minAvgViews && { avgViews: { gte: filters.minAvgViews } }),
+        ...(filters?.maxFollowers && { followersCount: { lte: filters.maxFollowers } }),
+        ...(filters?.minMedianViews && { medianViews: { gte: filters.minMedianViews } }),
       },
       orderBy: { createdAt: "desc" },
       include: {
@@ -113,6 +127,9 @@ export async function updateAccount(
     category?: string;
     tags?: string[];
     notes?: string;
+    autoScrape?: boolean;
+    medianViews?: number | null;
+    colorLabels?: { color: string; text: string }[];
   }
 ) {
   try {
@@ -128,13 +145,16 @@ export async function updateAccount(
   }
 }
 
-export async function deleteAccount(id: string) {
+export async function deleteAccount(id: string, deleteVideos: boolean = false) {
   try {
+    if (deleteVideos) {
+      await prisma.video.deleteMany({ where: { accountId: id } });
+    }
     const account = await prisma.account.delete({
       where: { id },
     });
     revalidatePath(`/projects/${account.projectId}`);
-    revalidatePath(`/projects/${account.projectId}/accounts`);
+    revalidatePath(`/projects/${account.projectId}/videos`);
     return { success: true };
   } catch (error) {
     return { error: "Failed to delete account" };

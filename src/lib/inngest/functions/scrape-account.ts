@@ -4,7 +4,7 @@ import {
   scrapeAccountProfile,
   scrapeAccountVideos,
 } from "@/lib/integrations/scrapecreators";
-import { calculateEngagementRate, calculateAvgViews } from "@/lib/utils/metrics";
+import { calculateEngagementRate, calculateAvgViews, calculateMedianViews } from "@/lib/utils/metrics";
 
 export const scrapeAccount = inngest.createFunction(
   {
@@ -87,6 +87,7 @@ export const scrapeAccount = inngest.createFunction(
           },
           create: {
             accountId: account.id,
+            projectId: account.projectId,
             platform: account.platform,
             videoId: video.videoId,
             url: video.url,
@@ -137,6 +138,7 @@ export const scrapeAccount = inngest.createFunction(
         .filter((v): v is number => v != null);
 
       const avgViews = calculateAvgViews(viewCounts);
+      const medianViews = calculateMedianViews(viewCounts);
 
       const engagementRates = allVideos
         .map((v) => v.engagementRate)
@@ -151,6 +153,7 @@ export const scrapeAccount = inngest.createFunction(
         where: { id: accountId },
         data: {
           avgViews,
+          medianViews,
           avgEngagementRate,
           videosCount: savedVideos.length,
           scrapeStatus: "idle",

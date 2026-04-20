@@ -11,8 +11,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  RefreshCw,
+  Trash2,
 } from "lucide-react";
-import { getVideos, createVideo, toggleBookmark, triggerBatchAnalyze } from "@/actions/videos";
+import { ColumnToggle } from "@/components/ui/column-toggle";
+import { getVideos, createVideo, toggleBookmark, triggerBatchAnalyze, scrapeVideoStats, deleteVideo } from "@/actions/videos";
 import { getAccounts } from "@/actions/accounts";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatNumber, formatPercent, formatDate } from "@/lib/utils/formatters";
@@ -39,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Multiselect } from "@/components/ui/multiselect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +58,7 @@ type VideoItem = {
   likesCount: number | null;
   engagementRate: number | null;
   postedAt: Date | null;
+  createdAt: Date;
   type: string;
   isBookmarked: boolean;
   account: {
@@ -61,7 +66,7 @@ type VideoItem = {
     username: string;
     displayName: string | null;
     platform: string;
-  };
+  } | null;
 };
 
 type AccountOption = {
@@ -78,13 +83,13 @@ export default function VideosPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [filterAccount, setFilterAccount] = useState<string>("all");
-  const [filterType, setFilterType] = useState<string>("all");
+  const [filterAccount, setFilterAccount] = useState<string[]>([]);
+  const [filterType, setFilterType] = useState<string[]>([]);
   const [filterBookmarked, setFilterBookmarked] = useState(false);
 
   const setFilterAndReset = {
-    account: (v: string) => { setFilterAccount(v); setPage(0); },
-    type: (v: string) => { setFilterType(v); setPage(0); },
+    account: (v: string[]) => { setFilterAccount(v); setPage(0); },
+    type: (v: string[]) => { setFilterType(v); setPage(0); },
     bookmarked: () => { setFilterBookmarked((b) => !b); setPage(0); },
   };
   const [sortField, setSortField] = useState<string>("createdAt");
@@ -93,11 +98,47 @@ export default function VideosPage() {
   const [formUrl, setFormUrl] = useState("");
   const [formAccountId, setFormAccountId] = useState("");
   const [formType, setFormType] = useState("video");
+  const [formAccountAutoDetected, setFormAccountAutoDetected] = useState(false);
+
+  const [scrapingVideos, setScrapingVideos] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchAccountId, setBatchAccountId] = useState("");
   const [batchLimit, setBatchLimit] = useState(10);
   const [batchSaving, setBatchSaving] = useState(false);
+
+  const VIDEO_COLUMNS = [
+    { key: "thumbnail", label: "Превью" },
+    { key: "views", label: "Просмотры" },
+    { key: "likes", label: "Лайки" },
+    { key: "er", label: "ER" },
+    { key: "postedAt", label: "Дата публ." },
+    { key: "createdAt", label: "Добавлено" },
+  ];
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    () => new Set(VIDEO_COLUMNS.map((c) => c.key))
+  );
+  const toggleColumn = (key: string) =>
+    setVisibleColumns((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  useEffect(() => {
+    if (!formUrl.trim() || accounts.length === 0) return;
+    const usernameMatch = formUrl.match(/[@/]([^/@?/]+)(?:\/video|\/reel|\/p\/|\/shorts\/|$)/);
+    if (!usernameMatch) return;
+    const parsed = usernameMatch[1].replace(/^@/, "").toLowerCase();
+    const found = accounts.find((a) => a.username.toLowerCase() === parsed);
+    if (found && found.id !== formAccountId) {
+      setFormAccountId(found.id);
+      setFormAccountAutoDetected(true);
+    }
+  }, [formUrl, accounts]);
 
   const PAGE_SIZE = 50;
   const [page, setPage] = useState(0);
@@ -110,8 +151,8 @@ export default function VideosPage() {
     }
     setLoading(true);
     const res = await getVideos(projectId, {
-      accountId: filterAccount !== "all" ? filterAccount : undefined,
-      type: filterType !== "all" ? filterType : undefined,
+      accountId: filterAccount.length > 0 ? filterAccount : undefined,
+      type: filterType.length > 0 ? filterType : undefined,
       isBookmarked: filterBookmarked ? true : undefined,
       take: PAGE_SIZE,
       skip: page * PAGE_SIZE,
@@ -179,21 +220,42 @@ export default function VideosPage() {
     }
     setSaving(true);
     const selectedAccount = accounts.find((a) => a.id === formAccountId);
-    const videoIdMatch = formUrl.match(/\/video\/(\d+)/);
-    const videoId = videoIdMatch ? videoIdMatch[1] : Date.now().toString();
+    let videoId = "";
+    const tiktokMatch = formUrl.match(/\/video\/(\d+)/);
+    if (tiktokMatch) videoId = tiktokMatch[1];
+    if (!videoId) {
+      const igMatch = formUrl.match(/\/(?:reel|p)\/([A-Za-z0-9_-]+)/);
+      if (igMatch) videoId = igMatch[1];
+    }
+    if (!videoId) {
+      const ytMatch = formUrl.match(/\/shorts\/([A-Za-z0-9_-]+)/) || formUrl.match(/[?&]v=([A-Za-z0-9_-]+)/);
+      if (ytMatch) videoId = ytMatch[1];
+    }
+    if (!videoId) videoId = Date.now().toString();
 
     const res = await createVideo({
       accountId: formAccountId,
+      projectId: projectId!,
       platform: selectedAccount?.platform || "tiktok",
       videoId,
       url: formUrl,
       type: formType,
     });
-    if (res.success) {
-      toast.success("Видео добавлено");
+    if (res.success && res.data) {
+      toast.success("Видео добавлено — загружаю статистику...");
       setDialogOpen(false);
       setFormUrl("");
+      setFormAccountId("");
+      setFormAccountAutoDetected(false);
       fetchVideos();
+      scrapeVideoStats((res.data as { id: string }).id).then((r) => {
+        if (r.success) {
+          toast.success("Статистика загружена");
+          fetchVideos();
+        } else {
+          toast.error(`Не удалось загрузить статистику: ${"error" in r ? r.error : "неизвестная ошибка"}`);
+        }
+      });
     } else {
       toast.error("Ошибка при добавлении видео");
     }
@@ -214,6 +276,47 @@ export default function VideosPage() {
       toast.error("Ошибка при запуске анализа");
     }
     setBatchSaving(false);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelected((prev) =>
+      prev.size === sortedVideos.length ? new Set() : new Set(sortedVideos.map((v) => v.id))
+    );
+  };
+
+  const handleDeleteSelected = async () => {
+    setDeleting(true);
+    const ids = Array.from(selected);
+    await Promise.all(ids.map((id) => deleteVideo(id)));
+    toast.success(`Удалено ${ids.length} видео`);
+    setSelected(new Set());
+    setDeleteDialogOpen(false);
+    setDeleting(false);
+    fetchVideos();
+  };
+
+  const handleScrapeVideo = async (videoId: string) => {
+    setScrapingVideos((prev) => new Set(prev).add(videoId));
+    const res = await scrapeVideoStats(videoId);
+    if (res.success) {
+      toast.success("Статистика обновлена");
+      fetchVideos();
+    } else {
+      toast.error(`Не удалось обновить: ${"error" in res ? res.error : "неизвестная ошибка"}`);
+    }
+    setScrapingVideos((prev) => {
+      const next = new Set(prev);
+      next.delete(videoId);
+      return next;
+    });
   };
 
   const handleToggleBookmark = async (videoId: string) => {
@@ -255,6 +358,16 @@ export default function VideosPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Видео</h1>
         <div className="flex gap-2">
+          {selected.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Удалить ({selected.size})
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setBatchDialogOpen(true)}>
             <Sparkles className="mr-2 h-4 w-4" />
             Анализировать топ-10
@@ -266,31 +379,25 @@ export default function VideosPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Select value={filterAccount} onValueChange={setFilterAndReset.account}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Аккаунт" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все аккаунты</SelectItem>
-            {accounts.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                @{a.username}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterType} onValueChange={setFilterAndReset.type}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Тип" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все типы</SelectItem>
-            <SelectItem value="video">Видео</SelectItem>
-            <SelectItem value="reel">Reel</SelectItem>
-            <SelectItem value="short">Short</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap gap-3 items-center">
+        <Multiselect
+          label="Аккаунт"
+          options={accounts.map((a) => ({ value: a.id, label: `@${a.username}` }))}
+          selected={filterAccount}
+          onChange={setFilterAndReset.account}
+          width="w-[180px]"
+        />
+        <Multiselect
+          label="Тип"
+          options={[
+            { value: "video", label: "Видео" },
+            { value: "reel", label: "Reel" },
+            { value: "short", label: "Short" },
+          ]}
+          selected={filterType}
+          onChange={setFilterAndReset.type}
+          width="w-[140px]"
+        />
         <Button
           variant={filterBookmarked ? "default" : "outline"}
           size="sm"
@@ -299,6 +406,7 @@ export default function VideosPage() {
           <Bookmark className="mr-1 h-3.5 w-3.5" />
           Избранное
         </Button>
+        <ColumnToggle columns={VIDEO_COLUMNS} visibleColumns={visibleColumns} onToggle={toggleColumn} />
       </div>
 
       {loading ? (
@@ -320,40 +428,79 @@ export default function VideosPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[60px]" />
+                <TableHead className="w-[40px]">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 cursor-pointer"
+                    checked={selected.size === sortedVideos.length && sortedVideos.length > 0}
+                    onChange={toggleSelectAll}
+                  />
+                </TableHead>
+                {visibleColumns.has("thumbnail") && <TableHead className="w-[60px]" />}
                 <TableHead>Описание</TableHead>
-                <TableHead className="text-right">
-                  Просмотры
-                  <SortButton field="viewsCount" />
-                </TableHead>
-                <TableHead className="text-right">Лайки</TableHead>
-                <TableHead className="text-right">
-                  ER
-                  <SortButton field="engagementRate" />
-                </TableHead>
-                <TableHead>
-                  Дата
-                  <SortButton field="postedAt" />
-                </TableHead>
-                <TableHead className="w-[80px]" />
+                {visibleColumns.has("views") && (
+                  <TableHead className="text-right">
+                    Просмотры
+                    <SortButton field="viewsCount" />
+                  </TableHead>
+                )}
+                {visibleColumns.has("likes") && (
+                  <TableHead className="text-right">
+                    Лайки
+                    <SortButton field="likesCount" />
+                  </TableHead>
+                )}
+                {visibleColumns.has("er") && (
+                  <TableHead className="text-right">
+                    ER
+                    <SortButton field="engagementRate" />
+                  </TableHead>
+                )}
+                {visibleColumns.has("postedAt") && (
+                  <TableHead>
+                    Дата публ.
+                    <SortButton field="postedAt" />
+                  </TableHead>
+                )}
+                {visibleColumns.has("createdAt") && (
+                  <TableHead>
+                    Добавлено
+                    <SortButton field="createdAt" />
+                  </TableHead>
+                )}
+                <TableHead className="w-[110px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedVideos.map((video) => (
-                <TableRow key={video.id}>
+                <TableRow
+                  key={video.id}
+                  data-selected={selected.has(video.id)}
+                  className="data-[selected=true]:bg-muted/50"
+                >
                   <TableCell>
-                    <div className="h-10 w-14 rounded bg-muted flex items-center justify-center overflow-hidden">
-                      {video.thumbnailUrl ? (
-                        <img
-                          src={video.thumbnailUrl}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <Video className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer"
+                      checked={selected.has(video.id)}
+                      onChange={() => toggleSelect(video.id)}
+                    />
                   </TableCell>
+                  {visibleColumns.has("thumbnail") && (
+                    <TableCell>
+                      <div className="h-10 w-14 rounded bg-muted flex items-center justify-center overflow-hidden">
+                        {video.thumbnailUrl ? (
+                          <img
+                            src={video.thumbnailUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Video className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Link
                       href={`/videos/${video.id}`}
@@ -363,24 +510,51 @@ export default function VideosPage() {
                         {video.description || "Без описания"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        @{video.account.username}
+                        {video.account
+                          ? `@${video.account.username}`
+                          : "Аккаунт удалён"}
                       </p>
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatNumber(video.viewsCount)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatNumber(video.likesCount)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatPercent(video.engagementRate)}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDate(video.postedAt)}
-                  </TableCell>
+                  {visibleColumns.has("views") && (
+                    <TableCell className="text-right font-medium">
+                      {formatNumber(video.viewsCount)}
+                    </TableCell>
+                  )}
+                  {visibleColumns.has("likes") && (
+                    <TableCell className="text-right">
+                      {formatNumber(video.likesCount)}
+                    </TableCell>
+                  )}
+                  {visibleColumns.has("er") && (
+                    <TableCell className="text-right">
+                      {formatPercent(video.engagementRate)}
+                    </TableCell>
+                  )}
+                  {visibleColumns.has("postedAt") && (
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(video.postedAt)}
+                    </TableCell>
+                  )}
+                  {visibleColumns.has("createdAt") && (
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(video.createdAt)}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleScrapeVideo(video.id)}
+                        disabled={scrapingVideos.has(video.id)}
+                        title="Обновить статистику"
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 ${scrapingVideos.has(video.id) ? "animate-spin" : ""}`}
+                        />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -442,8 +616,13 @@ export default function VideosPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Аккаунт</Label>
-              <Select value={formAccountId} onValueChange={setFormAccountId}>
+              <div className="flex items-center gap-2">
+                <Label>Аккаунт</Label>
+                {formAccountAutoDetected && formAccountId && (
+                  <span className="text-xs text-muted-foreground">— определён автоматически</span>
+                )}
+              </div>
+              <Select value={formAccountId} onValueChange={(v) => { setFormAccountId(v); setFormAccountAutoDetected(false); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите аккаунт" />
                 </SelectTrigger>
@@ -485,6 +664,25 @@ export default function VideosPage() {
             </Button>
             <Button onClick={handleCreate} disabled={saving}>
               {saving ? "Добавление..." : "Добавить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Удалить видео?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Будет удалено {selected.size} видео. Это действие необратимо.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteSelected} disabled={deleting}>
+              {deleting ? "Удаление..." : "Удалить"}
             </Button>
           </DialogFooter>
         </DialogContent>

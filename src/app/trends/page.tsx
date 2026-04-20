@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreVertical, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
+import { Multiselect } from "@/components/ui/multiselect";
 
 const TREND_TYPES = ["audio", "format", "topic", "challenge", "effect", "meme"];
 const PLATFORMS = ["tiktok", "instagram", "youtube", "twitter", "all"];
@@ -86,9 +87,9 @@ export default function TrendsPage() {
   const [editRelevance, setEditRelevance] = useState("warm");
   const [editSaving, setEditSaving] = useState(false);
 
-  const [filterType, setFilterType] = useState<string>("all");
-  const [filterPlatform, setFilterPlatform] = useState<string>("all");
-  const [filterRelevance, setFilterRelevance] = useState<string>("all");
+  const [filterType, setFilterType] = useState<string[]>([]);
+  const [filterPlatform, setFilterPlatform] = useState<string[]>([]);
+  const [filterRelevance, setFilterRelevance] = useState<string[]>([]);
 
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -103,9 +104,9 @@ export default function TrendsPage() {
     }
     setLoading(true);
     const res = await getTrends(projectId, {
-      type: filterType !== "all" ? filterType : undefined,
-      platform: filterPlatform !== "all" ? filterPlatform : undefined,
-      relevance: filterRelevance !== "all" ? filterRelevance : undefined,
+      type: filterType.length > 0 ? filterType : undefined,
+      platform: filterPlatform.length > 0 ? filterPlatform : undefined,
+      relevance: filterRelevance.length > 0 ? filterRelevance : undefined,
     });
     if (res.success && res.data) {
       setTrends(res.data as unknown as TrendItem[]);
@@ -205,43 +206,31 @@ export default function TrendsPage() {
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <Select value={filterType} onValueChange={setFilterType}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Тип" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все типы</SelectItem>
-            {TREND_TYPES.map((t) => (
-              <SelectItem key={t} value={t}>
-                {t}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterPlatform} onValueChange={setFilterPlatform}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Платформа" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все платформы</SelectItem>
-            {PLATFORMS.map((p) => (
-              <SelectItem key={p} value={p}>
-                {p}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterRelevance} onValueChange={setFilterRelevance}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Актуальность" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все</SelectItem>
-            <SelectItem value="hot">Горячие</SelectItem>
-            <SelectItem value="warm">Теплые</SelectItem>
-            <SelectItem value="cold">Холодные</SelectItem>
-          </SelectContent>
-        </Select>
+        <Multiselect
+          label="Тип"
+          options={TREND_TYPES.map((t) => ({ value: t, label: t }))}
+          selected={filterType}
+          onChange={setFilterType}
+          width="w-[150px]"
+        />
+        <Multiselect
+          label="Платформа"
+          options={PLATFORMS.map((p) => ({ value: p, label: p }))}
+          selected={filterPlatform}
+          onChange={setFilterPlatform}
+          width="w-[150px]"
+        />
+        <Multiselect
+          label="Актуальность"
+          options={[
+            { value: "hot", label: "Горячие" },
+            { value: "warm", label: "Теплые" },
+            { value: "cold", label: "Холодные" },
+          ]}
+          selected={filterRelevance}
+          onChange={setFilterRelevance}
+          width="w-[150px]"
+        />
       </div>
 
       {loading ? (

@@ -19,11 +19,6 @@ export const analyzeVideo = inngest.createFunction(
     const video = await step.run("fetch-video", async () => {
       return prisma.video.findUnique({
         where: { id: videoId },
-        include: {
-          account: {
-            select: { projectId: true },
-          },
-        },
       });
     });
 
@@ -52,7 +47,7 @@ export const analyzeVideo = inngest.createFunction(
       await step.run("create-hook", async () => {
         return prisma.hook.create({
           data: {
-            projectId: video.account.projectId,
+            projectId: video.projectId,
             videoId: video.id,
             text: analysisResult.hookText!,
             visualDescription: analysisResult.hookVisual,
@@ -68,7 +63,7 @@ export const analyzeVideo = inngest.createFunction(
       await step.run("create-script", async () => {
         return prisma.script.create({
           data: {
-            projectId: video.account.projectId,
+            projectId: video.projectId,
             videoId: video.id,
             title: `Script from ${video.videoId}`,
             hook: analysisResult.hookText,

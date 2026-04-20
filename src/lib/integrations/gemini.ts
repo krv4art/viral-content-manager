@@ -1,3 +1,5 @@
+import { getApiKey } from "@/lib/settings";
+
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
@@ -42,9 +44,9 @@ export async function analyzeVideo(
   videoUrl: string,
   description?: string
 ): Promise<VideoAnalysis> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = await getApiKey("geminiApiKey");
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is not set");
+    throw new Error("Gemini API key not configured");
   }
 
   const prompt = buildAnalysisPrompt(videoUrl, description);

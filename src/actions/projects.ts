@@ -125,7 +125,7 @@ export async function getProjectStats(id: string) {
     const [accounts, videos, hooks, scripts, hypotheses] = await Promise.all([
       prisma.account.count({ where: { projectId: id } }),
       prisma.video.count({
-        where: { account: { projectId: id } },
+        where: { projectId: id },
       }),
       prisma.hook.count({ where: { projectId: id } }),
       prisma.script.count({ where: { projectId: id } }),

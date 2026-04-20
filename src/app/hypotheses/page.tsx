@@ -9,6 +9,7 @@ import {
   Trash2,
   Pencil,
 } from "lucide-react";
+import { ColumnToggle } from "@/components/ui/column-toggle";
 import { getHypotheses, createHypothesis, updateHypothesis, deleteHypothesis } from "@/actions/hypotheses";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatDate } from "@/lib/utils/formatters";
@@ -106,6 +107,22 @@ export default function HypothesesPage() {
   const [editTagsInput, setEditTagsInput] = useState("");
   const [editMetrics, setEditMetrics] = useState<{ views: string; likes: string; comments: string; shares: string; saves: string }>({ views: "", likes: "", comments: "", shares: "", saves: "" });
   const [editSaving, setEditSaving] = useState(false);
+
+  const HYPO_COLUMNS = [
+    { key: "status", label: "Статус" },
+    { key: "priority", label: "Приоритет" },
+    { key: "format", label: "Формат" },
+    { key: "date", label: "Дата" },
+  ];
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    () => new Set(HYPO_COLUMNS.map((c) => c.key))
+  );
+  const toggleColumn = (key: string) =>
+    setVisibleColumns((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   const fetchHypotheses = useCallback(async () => {
     if (!projectId) {
@@ -391,15 +408,19 @@ export default function HypothesesPage() {
               </Button>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="space-y-3">
+              <div className="flex justify-end">
+                <ColumnToggle columns={HYPO_COLUMNS} visibleColumns={visibleColumns} onToggle={toggleColumn} />
+              </div>
+              <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Название</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead>Приоритет</TableHead>
-                    <TableHead>Формат</TableHead>
-                    <TableHead>Дата</TableHead>
+                    {visibleColumns.has("status") && <TableHead>Статус</TableHead>}
+                    {visibleColumns.has("priority") && <TableHead>Приоритет</TableHead>}
+                    {visibleColumns.has("format") && <TableHead>Формат</TableHead>}
+                    {visibleColumns.has("date") && <TableHead>Дата</TableHead>}
                     <TableHead className="w-[80px]" />
                   </TableRow>
                 </TableHeader>
@@ -416,44 +437,52 @@ export default function HypothesesPage() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Select
-                          value={h.status}
-                          onValueChange={(v) => handleStatusChange(h.id, v)}
-                        >
-                          <SelectTrigger className="h-7 w-[140px] text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {COLUMNS.map((col) => (
-                              <SelectItem key={col.id} value={col.id}>
-                                {col.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${
-                            PRIORITY_COLORS[h.priority]
-                          }`}
-                        >
-                          {PRIORITY_LABELS[h.priority]}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {h.format ? (
-                          <Badge variant="outline" className="text-xs">
-                            {h.format}
-                          </Badge>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(h.createdAt)}
-                      </TableCell>
+                      {visibleColumns.has("status") && (
+                        <TableCell>
+                          <Select
+                            value={h.status}
+                            onValueChange={(v) => handleStatusChange(h.id, v)}
+                          >
+                            <SelectTrigger className="h-7 w-[140px] text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {COLUMNS.map((col) => (
+                                <SelectItem key={col.id} value={col.id}>
+                                  {col.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("priority") && (
+                        <TableCell>
+                          <span
+                            className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${
+                              PRIORITY_COLORS[h.priority]
+                            }`}
+                          >
+                            {PRIORITY_LABELS[h.priority]}
+                          </span>
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("format") && (
+                        <TableCell>
+                          {h.format ? (
+                            <Badge variant="outline" className="text-xs">
+                              {h.format}
+                            </Badge>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                      )}
+                      {visibleColumns.has("date") && (
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatDate(h.createdAt)}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex gap-1">
                           <Button
@@ -478,6 +507,7 @@ export default function HypothesesPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
             </div>
           )}
         </TabsContent>

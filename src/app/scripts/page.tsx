@@ -10,6 +10,7 @@ import {
   Star,
   Check,
 } from "lucide-react";
+import { ColumnToggle } from "@/components/ui/column-toggle";
 import { getScripts, createScript, updateScript, deleteScript } from "@/actions/scripts";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatNumber, formatDuration } from "@/lib/utils/formatters";
@@ -41,6 +42,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Multiselect } from "@/components/ui/multiselect";
 import { toast } from "sonner";
 
 const FORMATS = [
@@ -80,9 +82,26 @@ export default function ScriptsPage() {
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const [filterFormat, setFilterFormat] = useState<string>("all");
-  const [filterLang, setFilterLang] = useState<string>("all");
-  const [filterRating, setFilterRating] = useState<string>("all");
+  const [filterFormat, setFilterFormat] = useState<string[]>([]);
+  const [filterLang, setFilterLang] = useState<string[]>([]);
+  const [filterRating, setFilterRating] = useState<number[]>([]);
+
+  const SCRIPT_COLUMNS = [
+    { key: "format", label: "Формат" },
+    { key: "language", label: "Язык" },
+    { key: "rating", label: "Рейтинг" },
+    { key: "duration", label: "Длительность" },
+    { key: "isUsed", label: "Исп." },
+  ];
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    () => new Set(SCRIPT_COLUMNS.map((c) => c.key))
+  );
+  const toggleColumn = (key: string) =>
+    setVisibleColumns((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   const [formTitle, setFormTitle] = useState("");
   const [formHook, setFormHook] = useState("");
@@ -104,10 +123,9 @@ export default function ScriptsPage() {
     }
     setLoading(true);
     const res = await getScripts(projectId, {
-      format: filterFormat !== "all" ? filterFormat : undefined,
-      language: filterLang !== "all" ? filterLang : undefined,
-      rating:
-        filterRating !== "all" ? parseInt(filterRating) : undefined,
+      format: filterFormat.length > 0 ? filterFormat : undefined,
+      language: filterLang.length > 0 ? filterLang : undefined,
+      rating: filterRating.length > 0 ? filterRating : undefined,
     });
     if (res.success && res.data) {
       setScripts(res.data as unknown as ScriptItem[]);
@@ -222,46 +240,29 @@ export default function ScriptsPage() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Select value={filterFormat} onValueChange={setFilterFormat}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Формат" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все форматы</SelectItem>
-            {FORMATS.map((f) => (
-              <SelectItem key={f} value={f}>
-                {f}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterLang} onValueChange={setFilterLang}>
-          <SelectTrigger className="w-[120px]">
-            <SelectValue placeholder="Язык" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все</SelectItem>
-            {LANGUAGES.map((l) => (
-              <SelectItem key={l} value={l}>
-                {l.toUpperCase()}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterRating} onValueChange={setFilterRating}>
-          <SelectTrigger className="w-[130px]">
-            <SelectValue placeholder="Рейтинг" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Любой</SelectItem>
-            {[5, 4, 3, 2, 1].map((r) => (
-              <SelectItem key={r} value={String(r)}>
-                {r}+
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap gap-3 items-center">
+        <Multiselect
+          label="Формат"
+          options={FORMATS.map((f) => ({ value: f, label: f }))}
+          selected={filterFormat}
+          onChange={setFilterFormat}
+          width="w-[160px]"
+        />
+        <Multiselect
+          label="Язык"
+          options={LANGUAGES.map((l) => ({ value: l, label: l.toUpperCase() }))}
+          selected={filterLang}
+          onChange={setFilterLang}
+          width="w-[120px]"
+        />
+        <Multiselect
+          label="Рейтинг"
+          options={[1, 2, 3, 4, 5].map((r) => ({ value: String(r), label: `${r}+` }))}
+          selected={filterRating.map(String)}
+          onChange={(v) => setFilterRating(v.map(Number))}
+          width="w-[130px]"
+        />
+        <ColumnToggle columns={SCRIPT_COLUMNS} visibleColumns={visibleColumns} onToggle={toggleColumn} />
       </div>
 
       {loading ? (
@@ -285,11 +286,11 @@ export default function ScriptsPage() {
               <TableRow>
                 <TableHead className="w-[40px]" />
                 <TableHead>Название</TableHead>
-                <TableHead>Формат</TableHead>
-                <TableHead>Язык</TableHead>
-                <TableHead>Рейтинг</TableHead>
-                <TableHead>Длительность</TableHead>
-                <TableHead>Исп.</TableHead>
+                {visibleColumns.has("format") && <TableHead>Формат</TableHead>}
+                {visibleColumns.has("language") && <TableHead>Язык</TableHead>}
+                {visibleColumns.has("rating") && <TableHead>Рейтинг</TableHead>}
+                {visibleColumns.has("duration") && <TableHead>Длительность</TableHead>}
+                {visibleColumns.has("isUsed") && <TableHead>Исп.</TableHead>}
                 <TableHead className="w-[80px]" />
               </TableRow>
             </TableHeader>
@@ -318,29 +319,39 @@ export default function ScriptsPage() {
                     <TableCell className="font-medium">
                       {script.title}
                     </TableCell>
-                    <TableCell>
-                      {script.format ? (
-                        <Badge variant="outline" className="text-xs">
-                          {script.format}
-                        </Badge>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {script.language.toUpperCase()}
-                    </TableCell>
-                    <TableCell>{renderStars(script.rating)}</TableCell>
-                    <TableCell className="text-sm">
-                      {formatDuration(script.durationSeconds)}
-                    </TableCell>
-                    <TableCell>
-                      {script.isUsed ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
+                    {visibleColumns.has("format") && (
+                      <TableCell>
+                        {script.format ? (
+                          <Badge variant="outline" className="text-xs">
+                            {script.format}
+                          </Badge>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                    )}
+                    {visibleColumns.has("language") && (
+                      <TableCell className="text-sm">
+                        {script.language.toUpperCase()}
+                      </TableCell>
+                    )}
+                    {visibleColumns.has("rating") && (
+                      <TableCell>{renderStars(script.rating)}</TableCell>
+                    )}
+                    {visibleColumns.has("duration") && (
+                      <TableCell className="text-sm">
+                        {formatDuration(script.durationSeconds)}
+                      </TableCell>
+                    )}
+                    {visibleColumns.has("isUsed") && (
+                      <TableCell>
+                        {script.isUsed ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex gap-1">
                         <Button

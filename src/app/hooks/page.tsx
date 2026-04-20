@@ -11,6 +11,7 @@ import {
   Trash2,
   Check,
 } from "lucide-react";
+import { ColumnToggle } from "@/components/ui/column-toggle";
 import { getHooks, createHook, updateHook, deleteHook } from "@/actions/hooks";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { formatNumber } from "@/lib/utils/formatters";
@@ -43,6 +44,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Multiselect } from "@/components/ui/multiselect";
 import { toast } from "sonner";
 
 const HOOK_TYPES = [
@@ -86,10 +88,27 @@ export default function HooksPage() {
   const [editAdaptedText, setEditAdaptedText] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const [filterType, setFilterType] = useState<string>("all");
-  const [filterLang, setFilterLang] = useState<string>("all");
-  const [filterRating, setFilterRating] = useState<string>("all");
+  const [filterType, setFilterType] = useState<string[]>([]);
+  const [filterLang, setFilterLang] = useState<string[]>([]);
+  const [filterRating, setFilterRating] = useState<number[]>([]);
   const [filterUsed, setFilterUsed] = useState<string>("all");
+
+  const HOOK_COLUMNS = [
+    { key: "hookType", label: "Тип" },
+    { key: "language", label: "Язык" },
+    { key: "rating", label: "Рейтинг" },
+    { key: "sourceViews", label: "Просмотры" },
+    { key: "isUsed", label: "Исп." },
+  ];
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    () => new Set(HOOK_COLUMNS.map((c) => c.key))
+  );
+  const toggleColumn = (key: string) =>
+    setVisibleColumns((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   const [formText, setFormText] = useState("");
   const [formHookType, setFormHookType] = useState("");
@@ -102,10 +121,9 @@ export default function HooksPage() {
     }
     setLoading(true);
     const res = await getHooks(projectId, {
-      hookType: filterType !== "all" ? filterType : undefined,
-      language: filterLang !== "all" ? filterLang : undefined,
-      rating:
-        filterRating !== "all" ? parseInt(filterRating) : undefined,
+      hookType: filterType.length > 0 ? filterType : undefined,
+      language: filterLang.length > 0 ? filterLang : undefined,
+      rating: filterRating.length > 0 ? filterRating : undefined,
       isUsed:
         filterUsed === "used"
           ? true
@@ -224,46 +242,28 @@ export default function HooksPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Select value={filterType} onValueChange={setFilterType}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Тип" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все типы</SelectItem>
-            {HOOK_TYPES.map((t) => (
-              <SelectItem key={t} value={t}>
-                {t}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterLang} onValueChange={setFilterLang}>
-          <SelectTrigger className="w-[120px]">
-            <SelectValue placeholder="Язык" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все</SelectItem>
-            {LANGUAGES.map((l) => (
-              <SelectItem key={l} value={l}>
-                {l.toUpperCase()}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterRating} onValueChange={setFilterRating}>
-          <SelectTrigger className="w-[130px]">
-            <SelectValue placeholder="Рейтинг" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Любой</SelectItem>
-            {[5, 4, 3, 2, 1].map((r) => (
-              <SelectItem key={r} value={String(r)}>
-                {r}+
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap gap-3 items-center">
+        <Multiselect
+          label="Тип"
+          options={HOOK_TYPES.map((t) => ({ value: t, label: t }))}
+          selected={filterType}
+          onChange={setFilterType}
+          width="w-[160px]"
+        />
+        <Multiselect
+          label="Язык"
+          options={LANGUAGES.map((l) => ({ value: l, label: l.toUpperCase() }))}
+          selected={filterLang}
+          onChange={setFilterLang}
+          width="w-[120px]"
+        />
+        <Multiselect
+          label="Рейтинг"
+          options={[1, 2, 3, 4, 5].map((r) => ({ value: String(r), label: `${r}+` }))}
+          selected={filterRating.map(String)}
+          onChange={(v) => setFilterRating(v.map(Number))}
+          width="w-[130px]"
+        />
         <Select value={filterUsed} onValueChange={setFilterUsed}>
           <SelectTrigger className="w-[130px]">
             <SelectValue placeholder="Использован" />
@@ -274,6 +274,9 @@ export default function HooksPage() {
             <SelectItem value="unused">Не использован</SelectItem>
           </SelectContent>
         </Select>
+        {viewMode === "table" && (
+          <ColumnToggle columns={HOOK_COLUMNS} visibleColumns={visibleColumns} onToggle={toggleColumn} />
+        )}
       </div>
 
       {loading ? (
@@ -360,11 +363,11 @@ export default function HooksPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Текст</TableHead>
-                <TableHead>Тип</TableHead>
-                <TableHead>Язык</TableHead>
-                <TableHead>Рейтинг</TableHead>
-                <TableHead className="text-right">Просмотры</TableHead>
-                <TableHead>Исп.</TableHead>
+                {visibleColumns.has("hookType") && <TableHead>Тип</TableHead>}
+                {visibleColumns.has("language") && <TableHead>Язык</TableHead>}
+                {visibleColumns.has("rating") && <TableHead>Рейтинг</TableHead>}
+                {visibleColumns.has("sourceViews") && <TableHead className="text-right">Просмотры</TableHead>}
+                {visibleColumns.has("isUsed") && <TableHead>Исп.</TableHead>}
                 <TableHead className="w-[80px]" />
               </TableRow>
             </TableHeader>
@@ -379,27 +382,37 @@ export default function HooksPage() {
                       </p>
                     )}
                   </TableCell>
-                  <TableCell>
-                    {hook.hookType && (
-                      <Badge variant="outline" className="text-xs">
-                        {hook.hookType}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {hook.language.toUpperCase()}
-                  </TableCell>
-                  <TableCell>{renderStars(hook.rating)}</TableCell>
-                  <TableCell className="text-right text-sm">
-                    {formatNumber(hook.sourceViews)}
-                  </TableCell>
-                  <TableCell>
-                    {hook.isUsed ? (
-                      <Check className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <StarOff className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </TableCell>
+                  {visibleColumns.has("hookType") && (
+                    <TableCell>
+                      {hook.hookType && (
+                        <Badge variant="outline" className="text-xs">
+                          {hook.hookType}
+                        </Badge>
+                      )}
+                    </TableCell>
+                  )}
+                  {visibleColumns.has("language") && (
+                    <TableCell className="text-sm">
+                      {hook.language.toUpperCase()}
+                    </TableCell>
+                  )}
+                  {visibleColumns.has("rating") && (
+                    <TableCell>{renderStars(hook.rating)}</TableCell>
+                  )}
+                  {visibleColumns.has("sourceViews") && (
+                    <TableCell className="text-right text-sm">
+                      {formatNumber(hook.sourceViews)}
+                    </TableCell>
+                  )}
+                  {visibleColumns.has("isUsed") && (
+                    <TableCell>
+                      {hook.isUsed ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <StarOff className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <div className="flex gap-1">
                       <Button
