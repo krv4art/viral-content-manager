@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { inngest } from "@/lib/inngest/client";
 import { generateImage } from "@/lib/integrations/runware";
+import { scrapeCarouselImages } from "@/lib/integrations/scrapecreators";
 
 export async function getCarousels(
   projectId: string,
@@ -217,9 +218,65 @@ export async function generateSlideImage(slideId: string) {
   }
 }
 
+/**
+ * Step 1 (separate from Gemini analysis): scrape slide images via ScrapeCreators
+ * and store them as slides. Synchronous + fast (no image download). Run this once;
+ * re-running Gemini analysis afterwards reuses these images without burning credits.
+ */
+export async function scrapeCarouselSlides(carouselId: string) {
+  try {
+    const carousel = await prisma.carousel.findUnique({
+      where: { id: carouselId },
+      include: { video: { select: { url: true, platform: true } } },
+    });
+    if (!carousel) return { error: "Carousel not found" };
+
+    const url = carousel.sourceUrl ?? carousel.video?.url;
+    if (!url) return { error: "У карусели нет URL источника или привязанного видео" };
+
+    const platform =
+      carousel.video?.platform ??
+      (url.includes("instagram.com") ? "instagram" : "tiktok");
+
+    const scraped = await scrapeCarouselImages(platform, url);
+
+    await prisma.carouselSlide.deleteMany({ where: { carouselId } });
+    const len = scraped.images.length;
+    await prisma.carouselSlide.createMany({
+      data: scraped.images.map((img, i) => ({
+        carouselId,
+        order: i + 1,
+        slideType: i === 0 ? "cover" : i === len - 1 ? "cta" : "body",
+        imageUrl: img,
+      })),
+    });
+    await prisma.carousel.update({
+      where: { id: carouselId },
+      data: { analysisStatus: "scraped", analysisError: null },
+    });
+
+    revalidatePath(`/carousels/${carouselId}`);
+    return { success: true, data: { count: len, description: scraped.description } };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Ошибка скрейпа слайдов";
+    await prisma.carousel
+      .update({
+        where: { id: carouselId },
+        data: { analysisStatus: "error", analysisError: message.slice(0, 1000) },
+      })
+      .catch(() => {});
+    return { error: message };
+  }
+}
+
 export async function triggerAnalyzeCarousel(carouselId: string) {
   try {
+    await prisma.carousel.update({
+      where: { id: carouselId },
+      data: { analysisStatus: "analyzing", analysisError: null },
+    });
     await inngest.send({ name: "analyze-carousel", data: { carouselId } });
+    revalidatePath(`/carousels/${carouselId}`);
     return { success: true };
   } catch {
     return { error: "Failed to trigger carousel analysis" };

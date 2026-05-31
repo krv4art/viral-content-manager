@@ -14,6 +14,8 @@ import {
   ExternalLink,
   Save,
   Loader2,
+  Download,
+  AlertCircle,
 } from "lucide-react";
 import {
   getCarousel,
@@ -24,6 +26,7 @@ import {
   deleteSlide,
   reorderSlides,
   generateSlideImage,
+  scrapeCarouselSlides,
   triggerAnalyzeCarousel,
   triggerAdaptCarousel,
 } from "@/actions/carousels";
@@ -86,11 +89,26 @@ type CarouselDetail = {
   carouselType: string;
   formula: string | null;
   sourceUrl: string | null;
+  analysisStatus: string;
+  analysisError: string | null;
   tags: string[];
   notes: string | null;
   slides: Slide[];
   video: { id: string; url: string; description: string | null } | null;
 };
+
+/** TikTok CDN blocks hotlinking — route those images through our proxy. */
+function slideImageSrc(url: string): string {
+  try {
+    const host = new URL(url).hostname;
+    if (host.endsWith(".tiktokcdn.com") || host.endsWith(".tiktokcdn-us.com")) {
+      return `/api/proxy/tiktok-image?url=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    /* ignore */
+  }
+  return url;
+}
 
 export default function CarouselDetailPage({
   params,
@@ -102,6 +120,7 @@ export default function CarouselDetailPage({
 
   const [carousel, setCarousel] = useState<CarouselDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [scraping, setScraping] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [adapting, setAdapting] = useState(false);
   const [savingField, setSavingField] = useState<string | null>(null);
@@ -149,6 +168,13 @@ export default function CarouselDetailPage({
     fetchCarousel();
   }, [fetchCarousel]);
 
+  // Poll while Gemini analysis is running in the background.
+  useEffect(() => {
+    if (carousel?.analysisStatus !== "analyzing") return;
+    const interval = setInterval(fetchCarousel, 4000);
+    return () => clearInterval(interval);
+  }, [carousel?.analysisStatus, fetchCarousel]);
+
   const saveHeader = async () => {
     setSavingField("header");
     const res = await updateCarousel(id, {
@@ -163,18 +189,42 @@ export default function CarouselDetailPage({
     setSavingField(null);
   };
 
+  // Step 1: scrape slide images via ScrapeCreators (costs credits, run once).
+  const handleScrapeSlides = async () => {
+    const url = editSourceUrl.trim() || carousel?.video?.url;
+    if (!url) {
+      toast.error("Укажите URL карусели или привяжите видео");
+      return;
+    }
+    if (editSourceUrl.trim() && editSourceUrl.trim() !== carousel?.sourceUrl) {
+      await updateCarousel(id, { sourceUrl: editSourceUrl.trim() });
+    }
+    setScraping(true);
+    const res = await scrapeCarouselSlides(id);
+    if (res.success && res.data) {
+      toast.success(`Спарсено слайдов: ${res.data.count}`);
+      await fetchCarousel();
+    } else {
+      toast.error(res.error ?? "Ошибка скрейпа");
+    }
+    setScraping(false);
+  };
+
+  // Step 2: analyze already-scraped slide images with Gemini (no re-scrape).
   const handleAnalyze = async () => {
     const url = editSourceUrl.trim() || carousel?.video?.url;
     if (!url) {
       toast.error("Укажите URL карусели или привяжите видео");
       return;
     }
-    await updateCarousel(id, { sourceUrl: editSourceUrl.trim() || undefined });
+    if (editSourceUrl.trim() && editSourceUrl.trim() !== carousel?.sourceUrl) {
+      await updateCarousel(id, { sourceUrl: editSourceUrl.trim() });
+    }
     setAnalyzing(true);
     const res = await triggerAnalyzeCarousel(id);
     if (res.success) {
-      toast.success("Анализ запущен. Слайды появятся через несколько секунд.");
-      setTimeout(fetchCarousel, 8000);
+      toast.success("Анализ запущен (Gemini). Тексты и формула появятся через несколько секунд.");
+      await fetchCarousel();
     } else {
       toast.error(res.error ?? "Ошибка запуска анализа");
     }
@@ -321,21 +371,36 @@ export default function CarouselDetailPage({
 
       {/* Settings block */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="text-sm font-medium text-zinc-300">Основное</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleScrapeSlides}
+              disabled={scraping || analyzing}
+              title="Шаг 1: спарсить картинки слайдов через ScrapeCreators (тратит кредиты)"
+            >
+              {scraping ? (
+                <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5 mr-2" />
+              )}
+              1. Спарсить слайды
+            </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleAnalyze}
-              disabled={analyzing}
+              disabled={analyzing || scraping || carousel.analysisStatus === "analyzing"}
+              title="Шаг 2: анализ текстов и формулы через Gemini (по уже спарсенным картинкам)"
             >
-              {analyzing ? (
+              {analyzing || carousel.analysisStatus === "analyzing" ? (
                 <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
               ) : (
                 <Wand2 className="h-3.5 w-3.5 mr-2" />
               )}
-              Анализировать
+              2. Анализ (Gemini)
             </Button>
             <Button
               variant="outline"
@@ -364,6 +429,26 @@ export default function CarouselDetailPage({
             </Button>
           </div>
         </div>
+
+        {/* Analysis status banner */}
+        {carousel.analysisStatus === "analyzing" && (
+          <div className="flex items-center gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-sm text-blue-300">
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+            Gemini анализирует слайды… тексты и формула появятся автоматически.
+          </div>
+        )}
+        {carousel.analysisStatus === "scraped" && (
+          <div className="flex items-center gap-2 rounded-md border border-purple-500/20 bg-purple-500/10 px-3 py-2 text-sm text-purple-300">
+            <Download className="h-4 w-4 shrink-0" />
+            Слайды спарсены. Нажмите «2. Анализ (Gemini)», чтобы извлечь тексты и формулу.
+          </div>
+        )}
+        {carousel.analysisStatus === "error" && carousel.analysisError && (
+          <div className="flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span className="break-words">{carousel.analysisError}</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -578,9 +663,9 @@ export default function CarouselDetailPage({
                     <div className="mt-2 rounded-md overflow-hidden border border-zinc-700">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={slide.imageUrl}
+                        src={slideImageSrc(slide.imageUrl)}
                         alt={`Slide ${idx + 1}`}
-                        className="w-full object-cover max-h-64"
+                        className="w-full object-contain max-h-80 bg-zinc-950"
                       />
                     </div>
                   )}

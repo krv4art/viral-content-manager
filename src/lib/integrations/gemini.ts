@@ -230,37 +230,85 @@ export type CarouselAnalysis = {
   slides: CarouselSlideAnalysis[];
 };
 
-export async function analyzeCarousel(carouselUrl: string): Promise<CarouselAnalysis> {
+/** Download a (TikTok/Instagram CDN) image and return base64 + mime, or null on failure. */
+async function fetchImageAsInlineData(
+  imageUrl: string
+): Promise<{ mimeType: string; data: string } | null> {
+  try {
+    const res = await fetch(imageUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Referer: "https://www.tiktok.com/",
+        Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return null;
+    const ct = res.headers.get("content-type") ?? "";
+    let mimeType = ct.split(";")[0].trim();
+    if (!mimeType.startsWith("image/")) {
+      // infer from URL extension
+      if (imageUrl.includes(".webp")) mimeType = "image/webp";
+      else if (imageUrl.includes(".png")) mimeType = "image/png";
+      else if (imageUrl.includes(".heic")) mimeType = "image/heic";
+      else mimeType = "image/jpeg";
+    }
+    const buffer = await res.arrayBuffer();
+    return { mimeType, data: Buffer.from(buffer).toString("base64") };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Analyze a photo carousel by sending its slide images (in order) to Gemini
+ * vision as inlineData. Gemini cannot fetch TikTok/Instagram page URLs itself,
+ * so the caller must supply the already-scraped slide image URLs.
+ */
+export async function analyzeCarousel(
+  imageUrls: string[],
+  description?: string | null
+): Promise<CarouselAnalysis> {
   const apiKey = await getApiKey("geminiApiKey");
   if (!apiKey) {
     throw new Error("Gemini API key not configured");
   }
+  if (imageUrls.length === 0) {
+    throw new Error("No slide images supplied for carousel analysis");
+  }
+
+  const inlineImages = await Promise.all(imageUrls.map(fetchImageAsInlineData));
+  const usableImages = inlineImages.filter(
+    (x): x is { mimeType: string; data: string } => x !== null
+  );
+
+  if (usableImages.length === 0) {
+    throw new Error("Не удалось скачать ни одного изображения слайда для анализа");
+  }
 
   const prompt = `You are a viral content analyst specializing in carousel posts (slideshows) for TikTok and Instagram.
 
-Analyze this carousel post and extract its structure slide by slide.
+You are given the ${usableImages.length} slides of one carousel post, in order (slide 1 first).
+${description ? `\nPost caption: "${description}"\n` : ""}
+Analyze the carousel and extract its structure slide by slide.
 
 Return a JSON object (respond with ONLY valid JSON, no markdown):
 
 {
-  "formula": "1-2 sentence description of the carousel formula: what type it is (list/how-to/before-after/myth-vs-reality/etc), how the hook works, how the body is structured, and what CTA is used",
+  "formula": "1-2 sentence description of the carousel formula: what type it is (list/how-to/before-after/myth-vs-reality/my-story/etc), how the hook works, how the body is structured, and what CTA is used",
   "slides": [
     {
       "order": 1,
       "slideType": "cover",
       "text": "Exact text visible on this slide, or null if no text",
-      "imagePrompt": "Detailed description of the visual: scene, style, lighting, mood, composition in 1-2 sentences. Suitable for image generation."
+      "imagePrompt": "Detailed description of the visual: scene, style, lighting, mood, composition in 1-2 sentences, suitable for AI image generation"
     }
   ]
 }
 
-slideType must be one of: "cover" (first slide / hook), "body" (middle slides with content), "cta" (last slide with call to action).
-
-For each slide describe:
-- text: all visible text exactly as shown
-- imagePrompt: the visual scene in enough detail to recreate it with AI image generation
-
-Be thorough. Capture every slide.`;
+slideType must be one of: "cover" (first slide / hook), "body" (middle content slides), "cta" (final call-to-action slide).
+Return exactly one slides[] entry per provided image, in the same order. Read all visible text exactly as shown.`;
 
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
     method: "POST",
@@ -270,7 +318,9 @@ Be thorough. Capture every slide.`;
         {
           parts: [
             { text: prompt },
-            { fileData: { fileUri: carouselUrl } },
+            ...usableImages.map((img) => ({
+              inlineData: { mimeType: img.mimeType, data: img.data },
+            })),
           ],
         },
       ],
