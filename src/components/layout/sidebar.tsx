@@ -40,7 +40,7 @@ const navItems = [
   { href: "/videos", label: "Видео", icon: Video },
   { href: "/hooks", label: "Хуки", icon: Anchor },
   { href: "/scripts", label: "Сценарии", icon: FileText },
-  { href: "/carousels", label: "Карусели", icon: LayoutGrid },
+  { href: "/carousels", label: "Мои карусели", icon: LayoutGrid },
   { href: "/creators", label: "Криейторы", icon: Drama },
   { href: "/trends", label: "Тренды", icon: Flame },
   { href: "/keywords", label: "Ключевые слова", icon: Tags },

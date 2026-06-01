@@ -247,7 +247,7 @@ export default function CarouselsPage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2">
           <LayoutGrid className="h-5 w-5 text-zinc-400" />
-          <h1 className="text-xl font-semibold text-zinc-100">Карусели</h1>
+          <h1 className="text-xl font-semibold text-zinc-100">Мои карусели</h1>
           {!loading && (
             <span className="text-sm text-zinc-500">({carousels.length})</span>
           )}
@@ -286,7 +286,7 @@ export default function CarouselsPage() {
           <BookmarkPlus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 pointer-events-none" />
           <Input
             className="pl-9 bg-zinc-900 border-zinc-700"
-            placeholder="Вставь ссылку на карусель TikTok или Instagram..."
+            placeholder="Вставь ссылку на референс (для анализа формулы и адаптации)..."
             value={quickUrl}
             onChange={(e) => setQuickUrl(e.target.value)}
             onPaste={(e) => {
@@ -321,7 +321,7 @@ export default function CarouselsPage() {
           <LayoutGrid className="h-12 w-12 text-zinc-600 mb-4" />
           <p className="text-zinc-400 mb-2">Нет каруселей</p>
           <p className="text-sm text-zinc-500 mb-6">
-            Создайте карусель вручную или из спарсенного видео
+            Вставь URL референса выше, чтобы проанализировать чужую карусель и адаптировать под свой продукт
           </p>
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />

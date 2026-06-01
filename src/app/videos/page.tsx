@@ -13,11 +13,15 @@ import {
   ExternalLink,
   RefreshCw,
   Trash2,
+  MessageCircle,
+  Eye,
 } from "lucide-react";
 import { ColumnToggle } from "@/components/ui/column-toggle";
 import { getVideos, createVideo, toggleBookmark, triggerBatchAnalyze, scrapeVideoStats, deleteVideo } from "@/actions/videos";
+import { triggerBatchAnalyzeComments } from "@/actions/comments";
 import { getAccounts } from "@/actions/accounts";
 import { useCurrentProject } from "@/components/layout/project-provider";
+import { usePersistedState, usePersistedSet } from "@/hooks/use-persisted-state";
 import { formatNumber, formatPercent, formatDate } from "@/lib/utils/formatters";
 import {
   Table,
@@ -61,12 +65,16 @@ type VideoItem = {
   createdAt: Date;
   type: string;
   isBookmarked: boolean;
+  isAnalyzed: boolean;
+  hookText: string | null;
+  thumbnailAnalyzed: boolean;
   account: {
     id: string;
     username: string;
     displayName: string | null;
     platform: string;
   } | null;
+  _count?: { comments: number; hooks: number; scripts: number };
 };
 
 type AccountOption = {
@@ -83,17 +91,17 @@ export default function VideosPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [filterAccount, setFilterAccount] = useState<string[]>([]);
-  const [filterType, setFilterType] = useState<string[]>([]);
-  const [filterBookmarked, setFilterBookmarked] = useState(false);
+  const [filterAccount, setFilterAccount] = usePersistedState<string[]>("vb-videos-account", []);
+  const [filterType, setFilterType] = usePersistedState<string[]>("vb-videos-type", []);
+  const [filterBookmarked, setFilterBookmarked] = usePersistedState<boolean>("vb-videos-bookmarked", false);
 
   const setFilterAndReset = {
     account: (v: string[]) => { setFilterAccount(v); setPage(0); },
     type: (v: string[]) => { setFilterType(v); setPage(0); },
-    bookmarked: () => { setFilterBookmarked((b) => !b); setPage(0); },
+    bookmarked: () => { setFilterBookmarked(!filterBookmarked); setPage(0); },
   };
-  const [sortField, setSortField] = useState<string>("createdAt");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sortField, setSortField] = usePersistedState<string>("vb-videos-sort-field", "createdAt");
+  const [sortDir, setSortDir] = usePersistedState<"asc" | "desc">("vb-videos-sort-dir", "desc");
 
   const [formUrl, setFormUrl] = useState("");
   const [formAccountId, setFormAccountId] = useState("");
@@ -102,6 +110,14 @@ export default function VideosPage() {
 
   const [scrapingVideos, setScrapingVideos] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [visitedIds, setVisitedIds] = usePersistedState<string[]>("vb-videos-visited", []);
+  const visitedSet = new Set(visitedIds);
+  const markVisited = (id: string) => setVisitedIds([id]);
+  const unmarkVisited = (id: string) => setVisitedIds(visitedIds.filter((v) => v !== id));
+  const handleRowClick = (e: React.MouseEvent, id: string) => {
+    if ((e.target as HTMLElement).closest("a, button, input, label")) return;
+    unmarkVisited(id);
+  };
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -109,36 +125,38 @@ export default function VideosPage() {
   const [batchAccountId, setBatchAccountId] = useState("");
   const [batchLimit, setBatchLimit] = useState(10);
   const [batchSaving, setBatchSaving] = useState(false);
+  const [batchCommentsDialogOpen, setBatchCommentsDialogOpen] = useState(false);
+  const [batchCommentsSaving, setBatchCommentsSaving] = useState(false);
 
   const VIDEO_COLUMNS = [
     { key: "thumbnail", label: "Превью" },
+    { key: "comments", label: "Комменты" },
     { key: "views", label: "Просмотры" },
     { key: "likes", label: "Лайки" },
     { key: "er", label: "ER" },
     { key: "postedAt", label: "Дата публ." },
     { key: "createdAt", label: "Добавлено" },
   ];
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    () => new Set(VIDEO_COLUMNS.map((c) => c.key))
+  const [visibleColumns, toggleColumn] = usePersistedSet(
+    "vb-videos-columns",
+    VIDEO_COLUMNS.map((c) => c.key)
   );
-  const toggleColumn = (key: string) =>
-    setVisibleColumns((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
 
   useEffect(() => {
     if (!formUrl.trim() || accounts.length === 0) return;
     const usernameMatch = formUrl.match(/[@/]([^/@?/]+)(?:\/video|\/reel|\/p\/|\/shorts\/|$)/);
     if (!usernameMatch) return;
     const parsed = usernameMatch[1].replace(/^@/, "").toLowerCase();
-    const found = accounts.find((a) => a.username.toLowerCase() === parsed);
+    const found = accounts.find((a) => a.username.replace(/^@/, "").toLowerCase() === parsed);
     if (found && found.id !== formAccountId) {
       setFormAccountId(found.id);
       setFormAccountAutoDetected(true);
     }
   }, [formUrl, accounts]);
+
+  useEffect(() => {
+    setFilterAccount([]);
+  }, [projectId]);
 
   const PAGE_SIZE = 50;
   const [page, setPage] = useState(0);
@@ -190,7 +208,7 @@ export default function VideosPage() {
 
   const handleSort = (field: string) => {
     if (sortField === field) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
     } else {
       setSortField(field);
       setSortDir("desc");
@@ -278,6 +296,19 @@ export default function VideosPage() {
     setBatchSaving(false);
   };
 
+  const handleBatchAnalyzeComments = async () => {
+    setBatchCommentsSaving(true);
+    const ids = Array.from(selected);
+    const res = await triggerBatchAnalyzeComments(ids);
+    if (res.success) {
+      toast.success(`Запущен анализ комментариев для ${ids.length} видео`);
+      setBatchCommentsDialogOpen(false);
+    } else {
+      toast.error(res.error || "Ошибка при запуске анализа комментариев");
+    }
+    setBatchCommentsSaving(false);
+  };
+
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -354,19 +385,29 @@ export default function VideosPage() {
   );
 
   return (
-    <div className="flex-1 space-y-6 p-6">
+    <div className="flex-1 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Видео</h1>
         <div className="flex gap-2">
           {selected.size > 0 && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setDeleteDialogOpen(true)}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Удалить ({selected.size})
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBatchCommentsDialogOpen(true)}
+              >
+                <MessageCircle className="mr-2 h-4 w-4" />
+                Комменты ({selected.size})
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Удалить ({selected.size})
+              </Button>
+            </>
           )}
           <Button variant="outline" onClick={() => setBatchDialogOpen(true)}>
             <Sparkles className="mr-2 h-4 w-4" />
@@ -379,10 +420,10 @@ export default function VideosPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-wrap gap-2 items-center">
         <Multiselect
           label="Аккаунт"
-          options={accounts.map((a) => ({ value: a.id, label: `@${a.username}` }))}
+          options={accounts.map((a) => ({ value: a.id, label: a.username.startsWith("@") ? `${a.username}` : `@${a.username}` }))}
           selected={filterAccount}
           onChange={setFilterAndReset.account}
           width="w-[180px]"
@@ -393,6 +434,8 @@ export default function VideosPage() {
             { value: "video", label: "Видео" },
             { value: "reel", label: "Reel" },
             { value: "short", label: "Short" },
+            { value: "carousel", label: "Карусель" },
+            { value: "photo", label: "Фото" },
           ]}
           selected={filterType}
           onChange={setFilterAndReset.type}
@@ -424,7 +467,7 @@ export default function VideosPage() {
           </Button>
         </div>
       ) : (
-        <div className="rounded-md border">
+        <div className="overflow-x-auto -mx-3 md:mx-0 px-3 md:px-0"><div className="rounded-md border min-w-[700px]">
           <Table>
             <TableHeader>
               <TableRow>
@@ -438,6 +481,9 @@ export default function VideosPage() {
                 </TableHead>
                 {visibleColumns.has("thumbnail") && <TableHead className="w-[60px]" />}
                 <TableHead>Описание</TableHead>
+                {visibleColumns.has("comments") && (
+                  <TableHead className="hidden md:table-cell w-[40px]" />
+                )}
                 {visibleColumns.has("views") && (
                   <TableHead className="text-right">
                     Просмотры
@@ -451,19 +497,19 @@ export default function VideosPage() {
                   </TableHead>
                 )}
                 {visibleColumns.has("er") && (
-                  <TableHead className="text-right">
+                  <TableHead className="text-right hidden md:table-cell">
                     ER
                     <SortButton field="engagementRate" />
                   </TableHead>
                 )}
                 {visibleColumns.has("postedAt") && (
-                  <TableHead>
+                  <TableHead className="hidden md:table-cell">
                     Дата публ.
                     <SortButton field="postedAt" />
                   </TableHead>
                 )}
                 {visibleColumns.has("createdAt") && (
-                  <TableHead>
+                  <TableHead className="hidden md:table-cell">
                     Добавлено
                     <SortButton field="createdAt" />
                   </TableHead>
@@ -476,7 +522,8 @@ export default function VideosPage() {
                 <TableRow
                   key={video.id}
                   data-selected={selected.has(video.id)}
-                  className="data-[selected=true]:bg-muted/50"
+                  className={`data-[selected=true]:bg-muted/50 cursor-pointer${visitedSet.has(video.id) ? " row-visited" : ""}`}
+                  onClick={(e) => handleRowClick(e, video.id)}
                 >
                   <TableCell>
                     <input
@@ -488,34 +535,59 @@ export default function VideosPage() {
                   </TableCell>
                   {visibleColumns.has("thumbnail") && (
                     <TableCell>
-                      <div className="h-10 w-14 rounded bg-muted flex items-center justify-center overflow-hidden">
-                        {video.thumbnailUrl ? (
+                      <div className="h-10 w-14 rounded bg-muted flex items-center justify-center overflow-hidden relative">
+                        <Video className="h-4 w-4 text-muted-foreground" />
+                        {video.thumbnailUrl && (
                           <img
-                            src={video.thumbnailUrl}
+                            src={`/api/proxy/tiktok-image?url=${encodeURIComponent(video.thumbnailUrl)}`}
                             alt=""
-                            className="h-full w-full object-cover"
+                            className="absolute inset-0 h-full w-full object-cover"
+                            loading="lazy"
+                            onError={(e) => e.currentTarget.remove()}
                           />
-                        ) : (
-                          <Video className="h-4 w-4 text-muted-foreground" />
                         )}
                       </div>
                     </TableCell>
                   )}
                   <TableCell>
-                    <Link
-                      href={`/videos/${video.id}`}
-                      className="hover:underline"
-                    >
-                      <p className="max-w-[250px] truncate text-sm">
-                        {video.description || "Без описания"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {video.account
-                          ? `@${video.account.username}`
-                          : "Аккаунт удалён"}
-                      </p>
-                    </Link>
+                    <div className="flex flex-col gap-0.5">
+                      <Link
+                        href={`/videos/${video.id}`}
+                        className="hover:underline"
+                      >
+                        <p className="max-w-[250px] truncate text-sm">
+                          {video.description || "Без описания"}
+                        </p>
+                      </Link>
+                      <div className="flex items-center gap-1">
+                        {video.account ? (
+                          <Link
+                            href={`/accounts/${video.account.id}`}
+                            className="text-xs text-muted-foreground hover:underline"
+                          >
+                            {video.account.username.startsWith("@") ? video.account.username : `@${video.account.username}`}
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Аккаунт удалён</span>
+                        )}
+                        {video.hookText && !video.isAnalyzed && video.thumbnailAnalyzed && (
+                          <span title="Прочитано с обложки"><Eye className="h-3 w-3 text-muted-foreground" /></span>
+                        )}
+                      </div>
+                    </div>
                   </TableCell>
+                  {visibleColumns.has("comments") && (
+                    <TableCell className="hidden md:table-cell">
+                      <div className="flex items-center gap-1">
+                        <MessageCircle
+                          className={`h-4 w-4 ${(video._count?.comments ?? 0) > 0 ? "text-primary fill-primary" : "text-muted-foreground/30"}`}
+                        />
+                        {(video._count?.comments ?? 0) > 0 && (
+                          <span className="text-xs text-muted-foreground">{video._count!.comments}</span>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                   {visibleColumns.has("views") && (
                     <TableCell className="text-right font-medium">
                       {formatNumber(video.viewsCount)}
@@ -527,17 +599,17 @@ export default function VideosPage() {
                     </TableCell>
                   )}
                   {visibleColumns.has("er") && (
-                    <TableCell className="text-right">
+                    <TableCell className="text-right hidden md:table-cell">
                       {formatPercent(video.engagementRate)}
                     </TableCell>
                   )}
                   {visibleColumns.has("postedAt") && (
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground hidden md:table-cell">
                       {formatDate(video.postedAt)}
                     </TableCell>
                   )}
                   {visibleColumns.has("createdAt") && (
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground hidden md:table-cell">
                       {formatDate(video.createdAt)}
                     </TableCell>
                   )}
@@ -567,7 +639,7 @@ export default function VideosPage() {
                           <Bookmark className="h-4 w-4" />
                         )}
                       </Button>
-                      <a href={video.url} target="_blank" rel="noopener noreferrer">
+                      <a href={video.url} target="_blank" rel="noopener noreferrer" onClick={() => markVisited(video.id)}>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Button>
@@ -578,7 +650,7 @@ export default function VideosPage() {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </div></div>
       )}
 
       {total > PAGE_SIZE && (
@@ -629,7 +701,7 @@ export default function VideosPage() {
                 <SelectContent>
                   {accounts.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
-                      @{a.username} ({a.platform})
+                      {a.username.startsWith("@") ? a.username : `@${a.username}`} ({a.platform})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -703,7 +775,7 @@ export default function VideosPage() {
                 <SelectContent>
                   {accounts.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
-                      @{a.username} ({a.platform})
+                      {a.username.startsWith("@") ? a.username : `@${a.username}`} ({a.platform})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -727,6 +799,25 @@ export default function VideosPage() {
             </Button>
             <Button onClick={handleBatchAnalyze} disabled={batchSaving}>
               {batchSaving ? "Запуск..." : "Запустить анализ"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={batchCommentsDialogOpen} onOpenChange={setBatchCommentsDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Анализировать комментарии</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Это запустит {selected.size} задач анализа, каждая ~30 сек + ScrapeCreators-запрос.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchCommentsDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleBatchAnalyzeComments} disabled={batchCommentsSaving}>
+              {batchCommentsSaving ? "Запуск..." : "Запустить"}
             </Button>
           </DialogFooter>
         </DialogContent>
