@@ -19,7 +19,7 @@ import {
 import { ColumnToggle } from "@/components/ui/column-toggle";
 import { getVideos, createVideo, toggleBookmark, triggerBatchAnalyze, scrapeVideoStats, deleteVideo } from "@/actions/videos";
 import { triggerBatchAnalyzeComments } from "@/actions/comments";
-import { getAccounts } from "@/actions/accounts";
+import { getAccounts, createAccount } from "@/actions/accounts";
 import { useCurrentProject } from "@/components/layout/project-provider";
 import { usePersistedState, usePersistedSet } from "@/hooks/use-persisted-state";
 import { formatNumber, formatPercent, formatDate } from "@/lib/utils/formatters";
@@ -251,14 +251,51 @@ export default function VideosPage() {
   });
 
   const handleCreate = async () => {
-    if (!formUrl.trim() || !formAccountId) {
-      toast.error("Заполните все поля");
-      return;
-    }
+    if (!formUrl.trim()) { toast.error("Введите URL видео"); return; }
     setSaving(true);
-    const selectedAccount = accounts.find((a) => a.id === formAccountId);
+
+    let resolvedAccountId = formAccountId;
+    let resolvedPlatform = accounts.find((a) => a.id === formAccountId)?.platform ?? "tiktok";
+
+    // Auto-create account if not selected but username is in URL
+    if (!resolvedAccountId) {
+      const usernameMatch = formUrl.match(/\/@([^/?&#]+)/);
+      const platform = formUrl.includes("instagram.com") ? "instagram"
+        : formUrl.includes("youtube.com") ? "youtube" : "tiktok";
+      if (usernameMatch) {
+        const username = usernameMatch[1];
+        const profileUrl = platform === "tiktok"
+          ? `https://www.tiktok.com/@${username}`
+          : platform === "instagram"
+          ? `https://www.instagram.com/${username}`
+          : `https://www.youtube.com/@${username}`;
+        const acc = await createAccount({
+          projectId: projectId!,
+          platform,
+          username: `@${username}`,
+          url: profileUrl,
+          category: "competitor",
+        });
+        if (acc.success && acc.data) {
+          resolvedAccountId = (acc.data as { id: string }).id;
+          resolvedPlatform = platform;
+          await fetchAccounts();
+          toast.success(`Аккаунт @${username} создан автоматически`);
+        } else {
+          toast.error("Не удалось создать аккаунт");
+          setSaving(false);
+          return;
+        }
+      } else {
+        toast.error("Не удалось определить аккаунт из URL");
+        setSaving(false);
+        return;
+      }
+    }
+
+    const selectedAccount = accounts.find((a) => a.id === resolvedAccountId);
     let videoId = "";
-    const tiktokMatch = formUrl.match(/\/video\/(\d+)/);
+    const tiktokMatch = formUrl.match(/\/(?:video|photo)\/(\d+)/);
     if (tiktokMatch) videoId = tiktokMatch[1];
     if (!videoId) {
       const igMatch = formUrl.match(/\/(?:reel|p)\/([A-Za-z0-9_-]+)/);
@@ -271,9 +308,9 @@ export default function VideosPage() {
     if (!videoId) videoId = Date.now().toString();
 
     const res = await createVideo({
-      accountId: formAccountId,
+      accountId: resolvedAccountId,
       projectId: projectId!,
-      platform: selectedAccount?.platform || "tiktok",
+      platform: selectedAccount?.platform || resolvedPlatform,
       videoId,
       url: formUrl,
       type: formType,
