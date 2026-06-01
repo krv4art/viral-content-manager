@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, FolderOpen } from "lucide-react";
+import { ChevronDown, FolderOpen, Layers } from "lucide-react";
 import { getProjects } from "@/actions/projects";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +20,8 @@ type Project = {
 export function ProjectSwitcher() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [open, setOpen] = useState(false);
-  const { projectId, projectName, setProject } = useCurrentProject();
+  const { projectId, projectName, isAllProjects, setProject, selectAllProjects } =
+    useCurrentProject();
 
   useEffect(() => {
     getProjects().then((result) => {
@@ -38,6 +39,11 @@ export function ProjectSwitcher() {
 
   const handleSelect = (id: string, name: string) => {
     setProject(id, name);
+    setOpen(false);
+  };
+
+  const handleSelectAll = () => {
+    selectAllProjects();
     setOpen(false);
   };
 
@@ -59,6 +65,17 @@ export function ProjectSwitcher() {
         className="w-64 border-zinc-800 bg-zinc-950 p-2"
         align="start"
       >
+        <button
+          className={`mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+            isAllProjects
+              ? "bg-zinc-800 text-zinc-100"
+              : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+          }`}
+          onClick={handleSelectAll}
+        >
+          <Layers className="h-4 w-4 shrink-0" />
+          Все проекты
+        </button>
         <div className="mb-2 px-2 text-xs font-medium text-zinc-500">
           Проекты
         </div>

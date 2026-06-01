@@ -813,9 +813,10 @@ useEffect(() => {
 ## 12. Global State
 
 ### `src/components/layout/project-provider.tsx`
-- Context: `{ projectId, projectName, setProject(id, name) }`
+- Context: `{ projectId, projectName, isAllProjects, setProject(id, name), selectAllProjects() }`
 - Hook: `useCurrentProject()` — used in every page
 - Persistence: cookie `currentProject` (30-day expiry)
+- **"All projects" view:** `selectAllProjects()` stores sentinel `ALL_PROJECTS_ID` (`"__all__"`) but exposes `projectId: null`, so every `getX(projectId || undefined)` query returns rows across all projects (incl. records with no project attached). `ProjectSwitcher` shows it as a top "Все проекты" item, highlighted via `isAllProjects`.
 
 ### `src/components/layout/sidebar.tsx`
 - 12 nav items: Dashboard, Projects, Accounts, Videos, Hooks, Scripts, Creators, Trends, Keywords, Hypotheses, Knowledge, Settings
