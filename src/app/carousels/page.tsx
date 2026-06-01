@@ -7,9 +7,9 @@ import {
   LayoutGrid,
   ExternalLink,
   Trash2,
-  Search,
   Images,
   Sparkles,
+  BookmarkPlus,
 } from "lucide-react";
 import {
   getCarousels,
@@ -50,6 +50,37 @@ import {
 import { MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 import { Multiselect } from "@/components/ui/multiselect";
+
+/** Strip query params, hash, and trailing slashes from TikTok/Instagram URLs. */
+function cleanCarouselUrl(raw: string): string {
+  try {
+    const url = new URL(raw.trim());
+    return url.origin + url.pathname.replace(/\/+$/, "");
+  } catch {
+    return raw.trim();
+  }
+}
+
+/** Generate a readable title from a carousel URL. */
+function titleFromUrl(url: string): string {
+  try {
+    const { hostname, pathname } = new URL(url);
+    if (hostname.includes("tiktok.com")) {
+      // /@username/photo/ID or /@username/video/ID
+      const m = pathname.match(/\/@([^/]+)\/(photo|video)\/(\d+)/);
+      if (m) return `@${m[1]} · ${m[2]}`;
+      const user = pathname.match(/\/@([^/]+)/);
+      if (user) return `@${user[1]}`;
+    }
+    if (hostname.includes("instagram.com")) {
+      const m = pathname.match(/\/(p|reel)\/([^/]+)/);
+      if (m) return `instagram · ${m[1]}/${m[2]}`;
+    }
+    return url.slice(0, 60);
+  } catch {
+    return url.slice(0, 60);
+  }
+}
 
 const STATUS_OPTIONS = [
   { value: "draft", label: "Черновик" },
@@ -95,6 +126,8 @@ export default function CarouselsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickUrl, setQuickUrl] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
   const [videos, setVideos] = useState<VideoOption[]>([]);
 
@@ -129,6 +162,22 @@ export default function CarouselsPage() {
     const res = await getVideos(projectId, { type: "carousel" });
     if (res.success) setVideos(res.data as VideoOption[]);
   }, [projectId]);
+
+  const handleQuickSave = async () => {
+    if (!quickUrl.trim() || !projectId) return;
+    const cleaned = cleanCarouselUrl(quickUrl);
+    const title = titleFromUrl(cleaned);
+    setQuickSaving(true);
+    const res = await createCarousel({ projectId, title, carouselType: "reference", sourceUrl: cleaned });
+    if (res.success) {
+      toast.success(`Сохранено: ${title}`);
+      setQuickUrl("");
+      fetchCarousels();
+    } else {
+      toast.error(res.error ?? "Ошибка");
+    }
+    setQuickSaving(false);
+  };
 
   const handleCreate = async () => {
     if (!form.title.trim()) { toast.error("Введите название"); return; }
@@ -229,6 +278,36 @@ export default function CarouselsPage() {
             Создать
           </Button>
         </div>
+      </div>
+
+      {/* Quick Save bar */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <BookmarkPlus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 pointer-events-none" />
+          <Input
+            className="pl-9 bg-zinc-900 border-zinc-700"
+            placeholder="Вставь ссылку на карусель TikTok или Instagram..."
+            value={quickUrl}
+            onChange={(e) => setQuickUrl(e.target.value)}
+            onPaste={(e) => {
+              const pasted = e.clipboardData.getData("text");
+              if (pasted.includes("tiktok.com") || pasted.includes("instagram.com")) {
+                e.preventDefault();
+                setQuickUrl(cleanCarouselUrl(pasted));
+              }
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") handleQuickSave(); }}
+          />
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleQuickSave}
+          disabled={quickSaving || !quickUrl.trim()}
+          className="shrink-0"
+        >
+          {quickSaving ? "Сохраняем..." : "Сохранить"}
+        </Button>
       </div>
 
       {loading ? (
