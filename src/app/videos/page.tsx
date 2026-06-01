@@ -769,6 +769,14 @@ export default function VideosPage() {
                 id="video-url"
                 value={formUrl}
                 onChange={(e) => setFormUrl(e.target.value)}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData("text");
+                  try {
+                    const u = new URL(pasted.trim());
+                    e.preventDefault();
+                    setFormUrl(u.origin + u.pathname.replace(/\/+$/, ""));
+                  } catch { /* не URL — оставить как есть */ }
+                }}
                 placeholder="https://tiktok.com/@user/video/123..."
               />
             </div>
