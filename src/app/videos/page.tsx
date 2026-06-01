@@ -143,10 +143,29 @@ export default function VideosPage() {
   );
 
   useEffect(() => {
-    if (!formUrl.trim() || accounts.length === 0) return;
-    const usernameMatch = formUrl.match(/[@/]([^/@?/]+)(?:\/video|\/reel|\/p\/|\/shorts\/|$)/);
+    const url = formUrl.trim();
+    if (!url) return;
+
+    // Auto-detect type from URL
+    const detectedType = (() => {
+      if (url.includes("tiktok.com")) {
+        if (/\/photo\/\d+/.test(url)) return "carousel";
+        if (/\/video\/\d+/.test(url)) return "video";
+      }
+      if (url.includes("instagram.com")) {
+        if (/\/reel\//.test(url)) return "reel";
+        if (/\/p\//.test(url)) return "photo";
+      }
+      if (url.includes("youtube.com/shorts") || url.includes("youtu.be")) return "short";
+      return null;
+    })();
+    if (detectedType && detectedType !== formType) setFormType(detectedType);
+
+    // Auto-detect account from URL
+    if (accounts.length === 0) return;
+    const usernameMatch = url.match(/\/@([^/?&#]+)/);
     if (!usernameMatch) return;
-    const parsed = usernameMatch[1].replace(/^@/, "").toLowerCase();
+    const parsed = usernameMatch[1].toLowerCase();
     const found = accounts.find((a) => a.username.replace(/^@/, "").toLowerCase() === parsed);
     if (found && found.id !== formAccountId) {
       setFormAccountId(found.id);
@@ -726,6 +745,8 @@ export default function VideosPage() {
                   <SelectItem value="video">Видео</SelectItem>
                   <SelectItem value="reel">Reel</SelectItem>
                   <SelectItem value="short">Short</SelectItem>
+                  <SelectItem value="carousel">Карусель</SelectItem>
+                  <SelectItem value="photo">Фото</SelectItem>
                 </SelectContent>
               </Select>
             </div>
